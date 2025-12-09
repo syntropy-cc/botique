@@ -370,6 +370,33 @@ Input: Article only. System auto-suggests/assigns per-post params.
 
 ## Coherence System
 
+### Coherence Brief Components
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                     COHERENCE BRIEF                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  VOICE                          VISUAL                          │
+│  ├─ tone                        ├─ palette_id                   │
+│  ├─ personality_traits          ├─ palette_description          │
+│  ├─ vocabulary_level            ├─ style                        │
+│  └─ formality                   └─ mood                         │
+│                                                                 │
+│  EMOTIONS                       CONTENT                         │
+│  ├─ primary                     ├─ keywords_to_emphasize        │
+│  ├─ secondary                   ├─ themes                       │
+│  └─ avoid                       └─ main_message                 │
+│                                                                 │
+│  AUDIENCE                       CONSTRAINTS                     │
+│  ├─ persona                     ├─ avoid_topics                 │
+│  ├─ pain_points                 └─ required_elements            │
+│  └─ desires                                                     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+
 ### Coherence Brief (Per-Post)
 
 Created in Phase 2, travels through Phases 3–5. Ensures per-post consistency in voice, visuals, etc.
