@@ -1,3 +1,4 @@
 botique_venv/
 articles/
 output/
+.env

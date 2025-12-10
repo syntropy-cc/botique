@@ -2,15 +2,20 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 import json
 from typing import Dict, List
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+
 
 @dataclass
 class IdeationConfig:
-    num_insights_min: int = 5
-    num_insights_max: int = 8
+    system_prompt: str = "You are an expert content ideator. Output only valid JSON as specified, without any additional text."
+    num_insights_min: int = 2
+    num_insights_max: int = 4
     num_keywords_min: int = 5
     num_keywords_max: int = 10
-    num_ideas_min: int = 3
-    num_ideas_max: int = 6
+    num_ideas_min: int = 5
+    num_ideas_max: int = 8
     platforms: List[str] = field(default_factory=lambda: ["linkedin", "instagram"])
     platforms_examples: str = "LinkedIn for professional networking, Instagram for visual storytelling"
     formats: List[str] = field(default_factory=lambda: ["carousel", "single_image"])
@@ -34,6 +39,7 @@ class IdeationConfig:
 
     def to_prompt_dict(self) -> Dict[str, any]:
         d = asdict(self)
+        d["system_prompt"] = self.system_prompt
         d["platforms"] = ", ".join(f"'{p}'" for p in self.platforms)
         d["formats"] = ", ".join(f"'{f}'" for f in self.formats)
         d["tones_examples"] = ", ".join(f"'{t}'" for t in self.tones_examples_list)
@@ -43,7 +49,6 @@ class IdeationConfig:
         d["personality_traits_examples"] = ", ".join(f"'{p}'" for p in self.personality_traits_examples_list)
         d["objectives"] = " | ".join(f"'{o}'" for o in self.allowed_objectives)
         d["hook_max_chars"] = str(self.hook_max_chars)
-        d["num_ideas_aim"] = self.num_ideas_aim
         d["tones_word_limit"] = self.tones_word_limit
         d["platforms_examples"] = self.platforms_examples
         d["max_json_chars"] = str(self.max_json_chars)
@@ -72,14 +77,42 @@ ARTICLES = ROOT / "articles"
 POST_IDEATOR_TEMPLATE = PROMPTS / "post_ideator.md"
 COHERENCE_BRIEF_TEMPLATE = PROMPTS / "coherence_brief.md"
 
+load_dotenv(ROOT / ".env")
+
 def build_post_ideator_prompt(
     article_text: str,
     ideation_config: IdeationConfig,
 ) -> str:
     template = POST_IDEATOR_TEMPLATE.read_text(encoding="utf-8")
     prompt = template.replace("{article}", article_text)
-    prompt = prompt.format(**ideation_config.to_prompt_dict())
+    prompt_dict = ideation_config.to_prompt_dict()
+    for key, value in prompt_dict.items():
+        prompt = prompt.replace(f"{{{key}}}", str(value))
     return prompt
+
+def call_llm_with_prompt(prompt: str, ideation_config: IdeationConfig, model: str = "deepseek-chat") -> str:
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise ValueError("DEEPSEEK_API_KEY environment variable not set.")
+
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://api.deepseek.com"
+    )
+
+    system_content = ideation_config.system_prompt or "You are a helpful assistant."  # Use config or default
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7,
+        max_tokens=8000,
+    )
+
+    return response.choices[0].message.content.strip()
 
 if __name__ == "__main__":
     # Example usage
@@ -100,4 +133,9 @@ This is a sample article about AI advancements. Key points include:
 """
 
     prompt = build_post_ideator_prompt(article_text, config)
-    print(prompt)
+
+    try:
+        llm_response = call_llm_with_prompt(prompt, config)
+        print("LLM Response:\n", llm_response)
+    except Exception as e:
+        print(f"Error calling LLM: {e}")
