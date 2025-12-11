@@ -11,7 +11,7 @@ from typing import Any, Dict
 
 from ..core.config import IdeationConfig, POST_IDEATOR_TEMPLATE
 from ..core.llm_client import HttpLLMClient
-from ..core.utils import render_template, parse_json_safely, validate_json_structure
+from ..core.utils import build_prompt_from_template, validate_llm_json_response
 
 
 class IdeaGenerator:
@@ -50,89 +50,45 @@ class IdeaGenerator:
             ValueError: If response structure is invalid
         """
         # Build prompt
-        prompt = self.build_prompt(article_text, config)
+        context = {
+            "ideation_config_json": config.to_json(),
+            "article": article_text,
+        }
+        prompt = build_prompt_from_template(POST_IDEATOR_TEMPLATE, context)
         
         # Call LLM
         raw_response = self.llm.generate(prompt)
         
         # Parse and validate response
-        payload = parse_json_safely(raw_response)
-        self.validate_response(payload)
+        payload = validate_llm_json_response(
+            raw_response=raw_response,
+            top_level_keys=["article_summary", "ideas"],
+            nested_validations={
+                "article_summary": [
+                    "title",
+                    "main_thesis",
+                    "key_insights",
+                    "themes",
+                    "keywords",
+                    "main_message",
+                ]
+            },
+            list_validations={
+                "ideas": [
+                    "id",
+                    "platform",
+                    "format",
+                    "tone",
+                    "persona",
+                    "objective",
+                    "angle",
+                    "hook",
+                    "narrative_arc",
+                    "key_insights_used",
+                    "estimated_slides",
+                    "confidence",
+                ]
+            },
+        )
         
         return payload
-    
-    def build_prompt(
-        self,
-        article_text: str,
-        config: IdeationConfig,
-    ) -> str:
-        """
-        Build prompt from template and inputs.
-        
-        Args:
-            article_text: Article content
-            config: Ideation configuration
-        
-        Returns:
-            Complete prompt string
-        """
-        context = {
-            "ideation_config_json": config.to_json(),
-            "article": article_text,
-        }
-        
-        return render_template(POST_IDEATOR_TEMPLATE, context)
-    
-    def validate_response(self, payload: Dict[str, Any]) -> None:
-        """
-        Validate LLM response structure.
-        
-        Args:
-            payload: Parsed JSON response
-        
-        Raises:
-            ValueError: If structure is invalid
-        """
-        # Check top-level keys
-        validate_json_structure(payload, ["article_summary", "ideas"])
-        
-        # Validate article_summary
-        summary = payload["article_summary"]
-        validate_json_structure(summary, [
-            "title",
-            "main_thesis",
-            "key_insights",
-            "themes",
-            "keywords",
-            "main_message",
-        ])
-        
-        # Validate ideas
-        ideas = payload["ideas"]
-        if not isinstance(ideas, list):
-            raise ValueError("'ideas' must be a list")
-        
-        if len(ideas) == 0:
-            raise ValueError("No ideas generated")
-        
-        # Validate each idea
-        required_idea_keys = [
-            "id",
-            "platform",
-            "format",
-            "tone",
-            "persona",
-            "objective",
-            "angle",
-            "hook",
-            "narrative_arc",
-            "key_insights_used",
-            "estimated_slides",
-            "confidence",
-        ]
-        
-        for idx, idea in enumerate(ideas):
-            try:
-                validate_json_structure(idea, required_idea_keys)
-            except ValueError as exc:
-                raise ValueError(f"Invalid idea at index {idx}: {exc}") from exc

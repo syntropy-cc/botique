@@ -8,7 +8,7 @@ Location: src/core/utils.py
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Union
 
 
 # =============================================================================
@@ -217,6 +217,143 @@ def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
         return text
     
     return text[:max_length - len(suffix)] + suffix
+
+
+# =============================================================================
+# PROMPT BUILDING
+# =============================================================================
+
+def build_prompt_from_template(
+    template_path: Path,
+    context: Dict[str, Any],
+) -> str:
+    """
+    Build prompt from template file and context dictionary.
+    
+    Generic function to fill in a prompt template with context values.
+    Uses render_template internally to replace placeholders.
+    
+    Args:
+        template_path: Path to the template file
+        context: Dictionary mapping placeholder names to values
+    
+    Returns:
+        Complete prompt string with placeholders filled
+    
+    Example:
+        template.md contains: "Config: {config_json}\nArticle: {article}"
+        context = {"config_json": '{"key": "value"}', "article": "Hello world"}
+        result = "Config: {\"key\": \"value\"}\nArticle: Hello world"
+    """
+    return render_template(template_path, context)
+
+
+# =============================================================================
+# LLM RESPONSE VALIDATION
+# =============================================================================
+
+def validate_llm_json_response(
+    raw_response: str,
+    top_level_keys: list[str],
+    nested_validations: Union[Dict[str, list[str]], None] = None,
+    list_validations: Union[Dict[str, Union[list[str], Callable]], None] = None,
+) -> Dict[str, Any]:
+    """
+    Parse and validate LLM JSON response structure.
+    
+    Uses parse_json_safely to handle common LLM output issues, then validates
+    the structure according to provided requirements.
+    
+    Args:
+        raw_response: Raw string response from LLM
+        top_level_keys: Required top-level keys in the JSON response
+        nested_validations: Dict mapping nested keys to their required sub-keys
+                           (e.g., {"article_summary": ["title", "main_thesis"]})
+        list_validations: Dict mapping list keys to validation requirements.
+                         Values can be:
+                         - list[str]: Required keys for each item in the list
+                         - callable: Custom validation function(item, index) -> None
+    
+    Returns:
+        Parsed and validated JSON as dictionary
+    
+    Raises:
+        ValueError: If JSON is invalid or structure doesn't match requirements
+    
+    Example:
+        # Simple validation
+        payload = validate_llm_json_response(
+            raw_response,
+            top_level_keys=["summary", "items"]
+        )
+        
+        # With nested validation
+        payload = validate_llm_json_response(
+            raw_response,
+            top_level_keys=["summary", "items"],
+            nested_validations={"summary": ["title", "content"]}
+        )
+        
+        # With list validation
+        payload = validate_llm_json_response(
+            raw_response,
+            top_level_keys=["items"],
+            list_validations={"items": ["id", "name", "value"]}
+        )
+    """
+    # Parse JSON safely
+    payload = parse_json_safely(raw_response)
+    
+    # Validate top-level structure
+    validate_json_structure(payload, top_level_keys)
+    
+    # Validate nested structures
+    if nested_validations:
+        for key, required_sub_keys in nested_validations.items():
+            if key not in payload:
+                continue  # Already validated by top-level check
+            
+            nested_data = payload[key]
+            if not isinstance(nested_data, dict):
+                raise ValueError(f"'{key}' must be a dictionary")
+            
+            validate_json_structure(nested_data, required_sub_keys)
+    
+    # Validate list structures
+    if list_validations:
+        for key, validation in list_validations.items():
+            if key not in payload:
+                continue  # Already validated by top-level check
+            
+            list_data = payload[key]
+            if not isinstance(list_data, list):
+                raise ValueError(f"'{key}' must be a list")
+            
+            if len(list_data) == 0:
+                raise ValueError(f"'{key}' list cannot be empty")
+            
+            # If validation is a list of required keys
+            if isinstance(validation, list):
+                required_item_keys = validation
+                for idx, item in enumerate(list_data):
+                    if not isinstance(item, dict):
+                        raise ValueError(f"'{key}[{idx}]' must be a dictionary")
+                    try:
+                        validate_json_structure(item, required_item_keys)
+                    except ValueError as exc:
+                        raise ValueError(f"Invalid item at '{key}[{idx}]': {exc}") from exc
+            
+            # If validation is a callable function
+            elif callable(validation):
+                for idx, item in enumerate(list_data):
+                    try:
+                        validation(item, idx)
+                    except ValueError as exc:
+                        raise ValueError(f"Invalid item at '{key}[{idx}]': {exc}") from exc
+            else:
+                raise TypeError(f"Invalid validation type for '{key}': expected list or callable")
+    
+    return payload
 
 
 # =============================================================================
