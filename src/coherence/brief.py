@@ -1,7 +1,7 @@
 """
 Coherence brief data model
 
-Complete coherence brief structure for per-post consistency.
+Complete coherence brief structure that travels through all pipeline phases.
 
 Location: src/coherence/brief.py
 """
@@ -15,68 +15,117 @@ class CoherenceBrief:
     """
     Complete coherence brief for a post.
     
-    This document travels through all generation phases, ensuring consistency
-    in voice, visuals, emotions, and content across all slides.
+    This document ensures consistency across all generation phases:
+    - Voice (tone, personality, vocabulary)
+    - Visual (palette, typography, style)
+    - Emotions (primary, secondary, avoid)
+    - Content (keywords, themes, message)
+    - Audience (persona, pain points, desires)
+    - Structure (objective, arc, slides)
+    
+    The brief travels through:
+    - Phase 3: Narrative Architecture
+    - Phase 4: Slide Generation
+    - Phase 5: Caption Writing
     """
     
-    # Metadata
-    post_id: str
-    idea_id: str
-    platform: str
-    format: str
+    # =========================================================================
+    # METADATA
+    # =========================================================================
     
-    # Voice
-    tone: str
-    personality_traits: List[str] = field(default_factory=list)
-    vocabulary_level: str = "moderate"
-    formality: str = "neutral"
+    post_id: str                    # Unique post identifier
+    idea_id: str                    # Reference to source idea
+    platform: str                   # Target platform
+    format: str                     # Content format
     
-    # Visual
-    palette_id: str = ""
-    palette: Dict[str, str] = field(default_factory=dict)
-    typography_id: str = ""
-    typography: Dict[str, str] = field(default_factory=dict)
-    visual_style: str = ""
-    visual_mood: str = ""
-    canvas: Dict[str, Any] = field(default_factory=dict)
+    # =========================================================================
+    # VOICE
+    # =========================================================================
     
-    # Emotions
-    primary_emotion: str = ""
-    secondary_emotions: List[str] = field(default_factory=list)
-    avoid_emotions: List[str] = field(default_factory=list)
-    target_emotions: List[str] = field(default_factory=list)
+    tone: str                       # Overall tone
+    personality_traits: List[str]   # Voice personality
+    vocabulary_level: str           # simple/moderate/sophisticated
+    formality: str                  # casual/neutral/formal
     
-    # Content
-    keywords_to_emphasize: List[str] = field(default_factory=list)
-    themes: List[str] = field(default_factory=list)
-    main_message: str = ""
-    value_proposition: str = ""
-    angle: str = ""
-    hook: str = ""
+    # =========================================================================
+    # VISUAL (Brand-aligned)
+    # =========================================================================
     
-    # Audience
-    persona: str = ""
-    pain_points: List[str] = field(default_factory=list)
-    desires: List[str] = field(default_factory=list)
+    palette_id: str                 # Color palette ID
+    palette: Dict[str, str]         # Actual color values
+    typography_id: str              # Typography config ID
+    typography: Dict[str, str]      # Font configurations
+    visual_style: str               # Style description
+    visual_mood: str                # Mood keyword
+    canvas: Dict[str, Any]          # Canvas dimensions
     
-    # Constraints
-    avoid_topics: List[str] = field(default_factory=list)
-    required_elements: List[str] = field(default_factory=list)
+    # =========================================================================
+    # EMOTIONS
+    # =========================================================================
     
-    # Structure
-    objective: str = "engagement"
-    narrative_arc: str = ""
-    estimated_slides: int = 7
+    primary_emotion: str            # Main emotional target
+    secondary_emotions: List[str]   # Supporting emotions
+    avoid_emotions: List[str]       # Emotions to avoid
+    target_emotions: List[str]      # All target emotions
     
-    # Context (for reference)
-    article_context: str = ""
-    key_insights_used: List[str] = field(default_factory=list)
+    # =========================================================================
+    # CONTENT
+    # =========================================================================
     
-    # Brand
-    brand_values: List[str] = field(default_factory=list)
+    keywords_to_emphasize: List[str]  # Key terms to highlight
+    themes: List[str]                  # Content themes
+    main_message: str                  # Core message
+    value_proposition: str             # Value to audience
+    angle: str                         # Unique angle
+    hook: str                          # Opening hook
+    
+    # =========================================================================
+    # AUDIENCE
+    # =========================================================================
+    
+    persona: str                    # Target persona description
+    pain_points: List[str]          # Audience challenges
+    desires: List[str]              # Audience goals
+    
+    # =========================================================================
+    # CONSTRAINTS
+    # =========================================================================
+    
+    avoid_topics: List[str]         # Topics to avoid
+    required_elements: List[str]    # Must-include elements
+    
+    # =========================================================================
+    # STRUCTURE
+    # =========================================================================
+    
+    objective: str                  # Post objective
+    narrative_arc: str              # Story structure
+    estimated_slides: int           # Number of slides
+    
+    # =========================================================================
+    # CONTEXT
+    # =========================================================================
+    
+    article_context: str            # Article summary for this post
+    key_insights_used: List[str]    # Insight IDs used
+    
+    # =========================================================================
+    # BRAND ALIGNMENT
+    # =========================================================================
+    
+    brand_values: List[str] = field(default_factory=list)  # Aligned brand values
+    
+    # =========================================================================
+    # METHODS
+    # =========================================================================
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
+        """
+        Convert to dictionary for JSON serialization.
+        
+        Returns:
+            Dictionary representation of the brief
+        """
         return {
             "metadata": {
                 "post_id": self.post_id,
@@ -132,99 +181,63 @@ class CoherenceBrief:
                 "key_insights_used": self.key_insights_used,
             },
             "brand": {
-                "brand_values": self.brand_values,
-            },
+                "values": self.brand_values,
+            }
         }
-    
-    def validate(self) -> List[str]:
-        """
-        Validate coherence brief completeness.
-        
-        Returns:
-            List of error messages (empty if valid)
-        """
-        errors = []
-        
-        # Required fields
-        if not self.post_id:
-            errors.append("post_id is required")
-        if not self.idea_id:
-            errors.append("idea_id is required")
-        if not self.platform:
-            errors.append("platform is required")
-        if not self.format:
-            errors.append("format is required")
-        if not self.tone:
-            errors.append("tone is required")
-        
-        # Visual requirements
-        if not self.palette_id:
-            errors.append("palette_id is required")
-        if not self.palette:
-            errors.append("palette is required")
-        if not self.typography_id:
-            errors.append("typography_id is required")
-        if not self.canvas:
-            errors.append("canvas is required")
-        
-        # Content requirements
-        if not self.main_message and not self.hook:
-            errors.append("main_message or hook is required")
-        
-        # Structure requirements
-        if self.estimated_slides < 1:
-            errors.append("estimated_slides must be at least 1")
-        
-        return errors
     
     def to_prompt_context(self) -> str:
         """
-        Format as a readable context block for LLM prompts.
+        Format as readable context block for LLM prompts.
         
-        This is what gets injected into narrative architect, copywriter, etc.
+        This string is injected into prompts for:
+        - Narrative Architect
+        - Copywriter
+        - Visual Composer
+        - Caption Writer
+        
+        Returns:
+            Formatted context string
         """
-        palette_preview = ""
-        if self.palette:
-            primary = self.palette.get("primary", "")
-            accent = self.palette.get("accent", "")
-            palette_preview = f" ({primary}, {accent})" if primary and accent else ""
-        
-        typography_preview = ""
-        if self.typography:
-            heading_font = self.typography.get("heading_font", "")
-            typography_preview = f" ({heading_font})" if heading_font else ""
-        
         return f"""
 === COHERENCE BRIEF ===
 
+BRAND IDENTITY:
+- Values: {', '.join(self.brand_values)}
+- Color Palette: {self.palette_id}
+- Typography: {self.typography_id}
+
 VOICE:
 - Tone: {self.tone}
-- Personality: {', '.join(self.personality_traits[:5]) if self.personality_traits else 'N/A'}
+- Personality: {', '.join(self.personality_traits)}
 - Vocabulary: {self.vocabulary_level}
 - Formality: {self.formality}
 
 VISUAL:
-- Palette: {self.palette_id}{palette_preview}
-- Typography: {self.typography_id}{typography_preview}
+- Theme: {self.palette.get('theme', 'N/A')}
+- Primary: {self.palette['primary']}
+- Accent: {self.palette['accent']}
+- CTA: {self.palette['cta']}
+- Typography: {self.typography['heading_font']} / {self.typography['body_font']}
+- Canvas: {self.canvas['width']}x{self.canvas['height']} ({self.canvas['aspect_ratio']})
 - Style: {self.visual_style}
 - Mood: {self.visual_mood}
 
 EMOTIONS:
 - Primary: {self.primary_emotion}
-- Secondary: {', '.join(self.secondary_emotions[:3]) if self.secondary_emotions else 'N/A'}
-- Avoid: {', '.join(self.avoid_emotions[:3]) if self.avoid_emotions else 'N/A'}
+- Secondary: {', '.join(self.secondary_emotions)}
+- Avoid: {', '.join(self.avoid_emotions)}
 
 CONTENT:
 - Main Message: {self.main_message}
 - Value Prop: {self.value_proposition}
-- Keywords: {', '.join(self.keywords_to_emphasize[:5]) if self.keywords_to_emphasize else 'N/A'}
+- Keywords: {', '.join(self.keywords_to_emphasize[:5])}
 - Angle: {self.angle}
 - Hook: {self.hook}
 
 AUDIENCE:
 - Persona: {self.persona}
-- Pain Points: {', '.join(self.pain_points[:3]) if self.pain_points else 'N/A'}
-- Desires: {', '.join(self.desires[:3]) if self.desires else 'N/A'}
+- Pain Points: {', '.join(self.pain_points[:3])}
+- Desires: {', '.join(self.desires[:3])}
 
 STRUCTURE:
 - Objective: {self.objective}
@@ -232,12 +245,62 @@ STRUCTURE:
 - Slides: {self.estimated_slides}
 
 CONSTRAINTS:
-- Avoid: {', '.join(self.avoid_topics[:3]) if self.avoid_topics else 'N/A'}
-- Required: {', '.join(self.required_elements) if self.required_elements else 'N/A'}
-
-BRAND:
-- Values: {', '.join(self.brand_values) if self.brand_values else 'N/A'}
+- Avoid: {', '.join(self.avoid_topics)}
+- Required: {', '.join(self.required_elements)}
 
 ======================
-"""
-
+""".strip()
+    
+    def get_summary(self) -> str:
+        """
+        Get a one-line summary of the brief.
+        
+        Returns:
+            Brief summary string
+        """
+        return (
+            f"{self.post_id}: {self.platform}/{self.format} | "
+            f"{self.tone} tone | {self.palette_id} | "
+            f"{self.estimated_slides} slides"
+        )
+    
+    def validate(self) -> List[str]:
+        """
+        Validate brief completeness.
+        
+        Returns:
+            List of validation errors (empty if valid)
+        """
+        errors = []
+        
+        # Required fields
+        if not self.post_id:
+            errors.append("post_id is required")
+        
+        if not self.platform:
+            errors.append("platform is required")
+        
+        if not self.tone:
+            errors.append("tone is required")
+        
+        if not self.palette_id:
+            errors.append("palette_id is required")
+        
+        if not self.typography_id:
+            errors.append("typography_id is required")
+        
+        # Constraints
+        if self.estimated_slides < 5 or self.estimated_slides > 12:
+            errors.append(f"estimated_slides must be 5-12, got {self.estimated_slides}")
+        
+        if not self.personality_traits:
+            errors.append("personality_traits cannot be empty")
+        
+        if not self.keywords_to_emphasize:
+            errors.append("keywords_to_emphasize cannot be empty")
+        
+        return errors
+    
+    def __repr__(self) -> str:
+        """String representation for debugging"""
+        return f"CoherenceBrief({self.get_summary()})"
