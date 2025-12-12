@@ -322,8 +322,12 @@ CONSTRAINTS:
             errors.append("typography_id is required")
         
         # Constraints
-        if self.estimated_slides < 5 or self.estimated_slides > 12:
-            errors.append(f"estimated_slides must be 5-12, got {self.estimated_slides}")
+        # Single image posts can have 1 slide, carousels need 5-12
+        min_slides = 1 if self.format == "single_image" else 5
+        if self.estimated_slides < min_slides or self.estimated_slides > 12:
+            errors.append(
+                f"estimated_slides must be {min_slides}-12 for {self.format} format, got {self.estimated_slides}"
+            )
         
         if not self.personality_traits:
             errors.append("personality_traits cannot be empty")
