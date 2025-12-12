@@ -49,12 +49,10 @@ class IdeaGenerator:
         Raises:
             ValueError: If response structure is invalid
         """
-        # Build prompt
-        context = {
-            "ideation_config_json": config.to_json(),
-            "article": article_text,
-        }
-        prompt = build_prompt_from_template(POST_IDEATOR_TEMPLATE, context)
+        # Build prompt using to_prompt_dict() to get all template variables
+        prompt_dict = config.to_prompt_dict()
+        prompt_dict["article"] = article_text
+        prompt = build_prompt_from_template(POST_IDEATOR_TEMPLATE, prompt_dict)
         
         # Call LLM
         raw_response = self.llm.generate(prompt)
