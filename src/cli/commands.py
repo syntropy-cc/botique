@@ -246,6 +246,28 @@ def handle_ideas_command(args: argparse.Namespace) -> int:
         
         print(f"\n✓ Phase 1 completed successfully")
         print(f"  Generated {result['ideas_count']} ideas")
+        
+        # Show filtering info if enabled
+        if result.get('filtered_count') != result.get('ideas_count'):
+            print(f"  Filtered to {result.get('filtered_count', 0)} ideas")
+        
+        # Show coherence briefs info
+        briefs_count = result.get('briefs_count', 0)
+        if briefs_count > 0:
+            print(f"  Generated {briefs_count} coherence brief(s)")
+            output_dir = Path(result.get('output_dir', ''))
+            if output_dir.exists():
+                consolidated_path = output_dir / "coherence_briefs.json"
+                if consolidated_path.exists():
+                    print(f"  Consolidated briefs: {consolidated_path}")
+                # Show individual brief paths
+                for brief in result.get('briefs', [])[:3]:  # Show first 3
+                    brief_path = output_dir / brief.post_id / "coherence_brief.json"
+                    if brief_path.exists():
+                        print(f"    - {brief.post_id}: {brief_path}")
+                if briefs_count > 3:
+                    print(f"    ... and {briefs_count - 3} more")
+        
         print(f"  Output: {result['output_path']}")
         
         return 0

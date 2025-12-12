@@ -186,6 +186,19 @@ class Orchestrator:
         self.logger.set_context(article_slug=article_slug)
         
         print(f"Generated {phase1_result['ideas_count']} ideas")
+        
+        # Show filtering info if enabled
+        if phase1_result.get('filtered_count') != phase1_result.get('ideas_count'):
+            print(f"Filtered to {phase1_result.get('filtered_count', 0)} ideas")
+        
+        # Show coherence briefs info
+        briefs_count = phase1_result.get('briefs_count', 0)
+        if briefs_count > 0:
+            print(f"Generated {briefs_count} coherence brief(s)")
+            consolidated_path = Path(phase1_result.get('output_dir', '')) / "coherence_briefs.json"
+            if consolidated_path.exists():
+                print(f"  Consolidated briefs: {consolidated_path}")
+        
         print(f"Output: {phase1_result['output_path']}")
         
         # Save logs after phase 1
@@ -230,8 +243,25 @@ class Orchestrator:
         print("="*70)
         print(f"Article: {article_slug}")
         print(f"Ideas generated: {phase1_result['ideas_count']}")
+        
+        # Show filtering info if enabled
+        if phase1_result.get('filtered_count') != phase1_result.get('ideas_count'):
+            print(f"Ideas filtered: {phase1_result.get('filtered_count', 0)}")
+        
+        # Show coherence briefs from Phase 1
+        phase1_briefs = phase1_result.get('briefs_count', 0)
+        if phase1_briefs > 0:
+            print(f"Coherence briefs (Phase 1): {phase1_briefs}")
+        
         print(f"Ideas selected: {phase2_result['selection_count']}")
-        print(f"Briefs created: {phase3_result['briefs_count']}")
+        
+        # Show briefs from Phase 3 (if any, e.g., if Phase 3 was run separately)
+        phase3_briefs = phase3_result.get('briefs_count', 0)
+        if phase3_briefs > 0 and phase3_briefs != phase1_briefs:
+            print(f"Coherence briefs (Phase 3): {phase3_briefs}")
+        elif phase3_briefs == 0 and phase1_briefs > 0:
+            print(f"Coherence briefs: {phase1_briefs} (from Phase 1)")
+        
         print(f"Output directory: {phase3_result['output_dir']}")
         
         # Log summary
