@@ -99,6 +99,7 @@ class HttpLLMClient:
         status = "success"
         error_msg = None
         content = None
+        raw_response_text = None  # Capture raw response for logging
         tokens_input = None
         tokens_output = None
         tokens_total = None
@@ -135,10 +136,13 @@ class HttpLLMClient:
                 error_msg = f"LLM API request failed: {exc}"
                 raise RuntimeError(error_msg) from exc
             
+            # Capture raw response text BEFORE checking status (for logging/debugging)
+            raw_response_text = response.text
+            
             # Check HTTP status
             if response.status_code != 200:
                 status = "error"
-                error_msg = f"LLM API error {response.status_code}: {response.text}"
+                error_msg = f"LLM API error {response.status_code}: {raw_response_text[:500]}"
                 raise RuntimeError(error_msg)
             
             # Parse response
@@ -146,7 +150,10 @@ class HttpLLMClient:
                 data = response.json()
             except json.JSONDecodeError as exc:
                 status = "error"
-                error_msg = f"Invalid JSON response from LLM API: {response.text}"
+                error_msg = f"Invalid JSON response from LLM API: {raw_response_text[:500]}"
+                # Even if JSON parsing fails, try to extract content from raw text
+                # This might be the actual LLM response wrapped in markdown or other format
+                content = raw_response_text
                 raise RuntimeError(error_msg) from exc
             
             # Extract usage information if available
@@ -161,24 +168,28 @@ class HttpLLMClient:
                 content = data["choices"][0]["message"]["content"]
             except (KeyError, IndexError) as exc:
                 status = "error"
-                error_msg = f"Unexpected LLM response format. Response: {json.dumps(data, indent=2)}"
+                error_msg = f"Unexpected LLM response format. Response: {json.dumps(data, indent=2)[:500]}"
+                # Fallback to raw response text if structure is unexpected
+                content = raw_response_text
                 raise RuntimeError(error_msg) from exc
             
             if not isinstance(content, str):
                 status = "error"
                 error_msg = f"Expected string content from LLM, got {type(content)}"
-                raise RuntimeError(error_msg)
+                content = str(content) if content else raw_response_text
             
             content = content.strip()
             
         finally:
             # Always log the call, even if there was an error
+            # Use raw_response_text if content extraction failed
             duration_ms = (time.time() - start_time) * 1000
+            log_response = content if content else (raw_response_text if 'raw_response_text' in locals() else None)
             
             if self.logger:
                 self.logger.log_call(
                     prompt=prompt,
-                    response=content,
+                    response=log_response,
                     model=self.model,
                     base_url=self.base_url,
                     max_tokens=max_tokens,

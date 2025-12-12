@@ -56,19 +56,6 @@ def run(
     article_text = article_path.read_text(encoding="utf-8")
     article_slug = article_path.stem
     
-    # Initialize generator
-    generator = IdeaGenerator(llm_client)
-    
-    # Generate ideas
-    payload = generator.generate_ideas(article_text, config)
-    
-    # Validate minimum ideas
-    ideas = payload["ideas"]
-    if len(ideas) < config.min_ideas:
-        raise ValueError(
-            f"Generated {len(ideas)} ideas, but minimum is {config.min_ideas}"
-        )
-    
     # Determine output directory
     if output_dir is None:
         output_dir = OUTPUT_DIR
@@ -76,6 +63,28 @@ def run(
     # Create article-specific output directory
     article_output_dir = output_dir / article_slug
     article_output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize generator
+    generator = IdeaGenerator(llm_client)
+    
+    # Prepare path for raw response (save even if validation fails)
+    debug_dir = article_output_dir / "debug"
+    raw_response_path = debug_dir / "raw_llm_response.txt"
+    
+    # Generate ideas (raw response will be saved automatically)
+    payload = generator.generate_ideas(
+        article_text, 
+        config,
+        save_raw_response=True,
+        raw_response_path=raw_response_path,
+    )
+    
+    # Validate minimum ideas
+    ideas = payload["ideas"]
+    if len(ideas) < config.min_ideas:
+        raise ValueError(
+            f"Generated {len(ideas)} ideas, but minimum is {config.min_ideas}"
+        )
     
     # Save phase1_ideas.json
     output_path = article_output_dir / "phase1_ideas.json"
