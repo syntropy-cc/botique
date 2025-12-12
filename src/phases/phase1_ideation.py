@@ -64,19 +64,21 @@ def run(
     article_output_dir = output_dir / article_slug
     article_output_dir.mkdir(parents=True, exist_ok=True)
     
+    # Configure LLM client to save raw responses in the article's debug directory
+    if hasattr(llm_client, 'raw_responses_dir') or hasattr(llm_client, 'save_raw_responses'):
+        # Set raw responses directory for this article
+        debug_dir = article_output_dir / "debug"
+        llm_client.raw_responses_dir = debug_dir
+        llm_client.save_raw_responses = True
+    
     # Initialize generator
     generator = IdeaGenerator(llm_client)
     
-    # Prepare path for raw response (save even if validation fails)
-    debug_dir = article_output_dir / "debug"
-    raw_response_path = debug_dir / "raw_llm_response.txt"
-    
-    # Generate ideas (raw response will be saved automatically)
+    # Generate ideas (raw response will be automatically saved by HttpLLMClient.generate())
     payload = generator.generate_ideas(
         article_text, 
         config,
-        save_raw_response=True,
-        raw_response_path=raw_response_path,
+        context=article_slug,  # Pass context for organizing saved responses
     )
     
     # Validate minimum ideas

@@ -9,6 +9,8 @@ Location: src/core/llm_client.py
 import json
 import os
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 import requests
@@ -38,6 +40,8 @@ class HttpLLMClient:
         model: str = "deepseek-chat",
         timeout: int = 60,
         logger: Optional["LLMLogger"] = None,
+        save_raw_responses: bool = True,
+        raw_responses_dir: Optional[Path] = None,
     ) -> None:
         """
         Initialize LLM client.
@@ -48,6 +52,8 @@ class HttpLLMClient:
             model: Model identifier
             timeout: Request timeout in seconds
             logger: Optional LLM logger for tracking calls
+            save_raw_responses: Whether to automatically save raw responses (default: True)
+            raw_responses_dir: Directory to save raw responses (default: output/{context}/debug/)
         
         Raises:
             RuntimeError: If API key is not provided or found in environment
@@ -65,6 +71,8 @@ class HttpLLMClient:
         self.model = model
         self.timeout = timeout
         self.logger = logger
+        self.save_raw_responses = save_raw_responses
+        self.raw_responses_dir = raw_responses_dir
     
     @property
     def chat_url(self) -> str:
@@ -76,17 +84,22 @@ class HttpLLMClient:
         prompt: str,
         max_tokens: int = 2048,
         temperature: float = 0.2,
+        context: Optional[str] = None,
+        save_raw: Optional[bool] = None,
     ) -> str:
         """
         Generate completion from prompt.
         
         Sends a single user message and returns the assistant's response.
         Automatically logs the call if logger is configured.
+        Optionally saves raw response to file for debugging.
         
         Args:
             prompt: The full prompt text
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0.0-2.0)
+            context: Optional context identifier (e.g., article_slug) for organizing saved responses
+            save_raw: Whether to save raw response (overrides instance default if provided)
         
         Returns:
             Assistant's response text
@@ -186,6 +199,16 @@ class HttpLLMClient:
             duration_ms = (time.time() - start_time) * 1000
             log_response = content if content else (raw_response_text if 'raw_response_text' in locals() else None)
             
+            # Save raw response if enabled (even on errors)
+            should_save_raw = save_raw if save_raw is not None else self.save_raw_responses
+            if should_save_raw and 'raw_response_text' in locals() and raw_response_text:
+                self._save_raw_response(
+                    raw_response_text,
+                    context=context,
+                    status=status,
+                    error=error_msg,
+                )
+            
             if self.logger:
                 self.logger.log_call(
                     prompt=prompt,
@@ -203,6 +226,55 @@ class HttpLLMClient:
                 )
         
         return content
+    
+    def _save_raw_response(
+        self,
+        raw_response: str,
+        context: Optional[str] = None,
+        status: str = "success",
+        error: Optional[str] = None,
+    ) -> Optional[Path]:
+        """
+        Save raw LLM response to file for debugging.
+        
+        Args:
+            raw_response: Raw response text to save
+            context: Optional context identifier (e.g., article_slug)
+            status: Call status (success/error/timeout)
+            error: Error message if any
+        
+        Returns:
+            Path to saved file, or None if saving was disabled/failed
+        """
+        try:
+            # Determine save directory
+            if self.raw_responses_dir:
+                save_dir = self.raw_responses_dir
+            elif context:
+                from .config import OUTPUT_DIR
+                save_dir = OUTPUT_DIR / context / "debug"
+            else:
+                from .config import OUTPUT_DIR
+                save_dir = OUTPUT_DIR / "debug"
+            
+            # Create directory
+            save_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # milliseconds
+            filename = f"raw_response_{timestamp}.txt"
+            if status != "success":
+                filename = f"raw_response_{status}_{timestamp}.txt"
+            
+            # Save file
+            file_path = save_dir / filename
+            file_path.write_text(raw_response, encoding="utf-8")
+            
+            return file_path
+        except Exception as e:
+            # Don't fail the main operation if saving fails
+            # Could log this to a separate error log if needed
+            return None
     
     def __repr__(self) -> str:
         """String representation for debugging"""

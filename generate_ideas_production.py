@@ -54,7 +54,13 @@ def main():
     logger.set_context(article_slug=article_slug)
     print(f"   ✓ Logger criado: session_id={logger.get_session_id()[:8]}...")
     
+    # Criar diretório de output primeiro
+    output_dir = OUTPUT_DIR / article_slug
+    output_dir.mkdir(parents=True, exist_ok=True)
+    debug_dir = output_dir / "debug"
+    
     # Criar cliente LLM com logger (timeout aumentado para respostas grandes)
+    # Configurar para salvar respostas brutas automaticamente
     print(f"\n3. Criando cliente LLM...")
     llm_client = HttpLLMClient(
         api_key=api_key,
@@ -62,8 +68,11 @@ def main():
         model="deepseek-chat",
         timeout=180,  # 3 minutos para respostas grandes
         logger=logger,
+        save_raw_responses=True,  # Habilitar salvamento automático
+        raw_responses_dir=debug_dir,  # Diretório específico para este artigo
     )
     print(f"   ✓ Cliente LLM criado: model={llm_client.model}, timeout={llm_client.timeout}s")
+    print(f"   ✓ Salvamento automático de respostas brutas: habilitado")
     
     # Criar gerador de ideias
     print(f"\n4. Criando gerador de ideias...")
@@ -82,119 +91,35 @@ def main():
     print(f"     - Ideias: {config.num_ideas_min}-{config.num_ideas_max}")
     print(f"     - Insights: {config.num_insights_min}-{config.num_insights_max}")
     
-    # Criar diretório de output primeiro
-    output_dir = OUTPUT_DIR / article_slug
-    output_dir.mkdir(parents=True, exist_ok=True)
-    debug_dir = output_dir / "debug"
-    debug_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Gerar ideias
+    # Gerar ideias (resposta bruta será salva automaticamente pelo HttpLLMClient)
     print(f"\n6. Gerando ideias (chamada real ao LLM)...")
     print(f"   ⏳ Isso pode levar alguns segundos...")
+    print(f"   📝 A resposta bruta será salva automaticamente em: {debug_dir}")
     
     try:
-        # Construir prompt manualmente para debug se necessário
-        from src.core.config import POST_IDEATOR_TEMPLATE
-        from src.core.utils import build_prompt_from_template
-        
-        prompt_dict = config.to_prompt_dict()
-        prompt_dict["article"] = article_text
-        prompt = build_prompt_from_template(POST_IDEATOR_TEMPLATE, prompt_dict)
-        
-        # Fazer chamada direta para capturar resposta bruta
-        print(f"   📝 Tamanho do prompt: {len(prompt)} caracteres")
-        
-        raw_response = llm_client.generate(
-            prompt=prompt,
-            max_tokens=8192,  # Aumentar para garantir resposta completa
-            temperature=0.2,
+        payload = generator.generate_ideas(
+            article_text,
+            config,
+            context=article_slug,  # Contexto para organizar respostas salvas
         )
+        print(f"   ✓ Ideias geradas com sucesso!")
         
-        # Salvar resposta bruta para debug
-        raw_response_path = debug_dir / "raw_llm_response.txt"
-        raw_response_path.write_text(raw_response, encoding="utf-8")
-        print(f"   ✓ Resposta bruta salva: {raw_response_path}")
-        print(f"   📏 Tamanho da resposta: {len(raw_response)} caracteres")
-        
-        # Tentar parsear e validar
-        from src.core.utils import validate_llm_json_response
-        
-        payload = validate_llm_json_response(
-            raw_response=raw_response,
-            top_level_keys=["article_summary", "ideas"],
-            nested_validations={
-                "article_summary": [
-                    "title",
-                    "main_thesis",
-                    "detected_tone",
-                    "key_insights",
-                    "themes",
-                    "keywords",
-                    "main_message",
-                    "avoid_topics",
-                ]
-            },
-            list_validations={
-                "ideas": [
-                    "id",
-                    "platform",
-                    "format",
-                    "tone",
-                    "persona",
-                    "personality_traits",
-                    "objective",
-                    "angle",
-                    "hook",
-                    "narrative_arc",
-                    "vocabulary_level",
-                    "formality",
-                    "key_insights_used",
-                    "target_emotions",
-                    "primary_emotion",
-                    "secondary_emotions",
-                    "avoid_emotions",
-                    "value_proposition",
-                    "article_context_for_idea",
-                    "idea_explanation",
-                    "estimated_slides",
-                    "confidence",
-                    "rationale",
-                    "risks",
-                    "keywords_to_emphasize",
-                    "pain_points",
-                    "desires",
-                ],
-                "article_summary.key_insights": [
-                    "id",
-                    "content",
-                    "type",
-                    "strength",
-                    "source_quote",
-                ],
-            },
-        )
-        
-        print(f"   ✓ JSON validado com sucesso!")
+        # Verificar se a resposta bruta foi salva
+        raw_files = list(debug_dir.glob("raw_response_*.txt"))
+        if raw_files:
+            latest_raw = max(raw_files, key=lambda p: p.stat().st_mtime)
+            print(f"   ✓ Resposta bruta salva automaticamente: {latest_raw.name}")
         
     except Exception as e:
         print(f"   ❌ Erro ao gerar ideias: {e}")
         import traceback
         traceback.print_exc()
         
-        # Se houver erro, tentar salvar o que foi gerado mesmo assim
-        if 'raw_response' in locals():
-            print(f"\n   ⚠️  Tentando salvar resposta parcial...")
-            try:
-                # Tentar extrair JSON mesmo com erros
-                import re
-                json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
-                if json_match:
-                    partial_json = json_match.group(0)
-                    partial_path = debug_dir / "partial_response.json"
-                    partial_path.write_text(partial_json, encoding="utf-8")
-                    print(f"   ✓ Resposta parcial salva: {partial_path}")
-            except:
-                pass
+        # Verificar se a resposta bruta foi salva mesmo com erro
+        raw_files = list(debug_dir.glob("raw_response_*.txt"))
+        if raw_files:
+            latest_raw = max(raw_files, key=lambda p: p.stat().st_mtime)
+            print(f"\n   ✓ Resposta bruta salva mesmo com erro: {latest_raw.name}")
         
         return 1
     
