@@ -101,6 +101,26 @@ class CoherenceBriefBuilder:
             required_elements.append("professional_cta")
         
         # =====================================================================
+        # EXTRACT KEY INSIGHTS CONTENT
+        # =====================================================================
+        
+        key_insights_used = idea.get("key_insights_used", [])
+        all_insights = article_summary.get("key_insights", [])
+        key_insights_content = [
+            insight for insight in all_insights
+            if insight.get("id") in key_insights_used
+        ]
+        
+        # =====================================================================
+        # BUILD BRAND ASSETS
+        # =====================================================================
+        
+        brand_assets = {
+            "handle": "@syntropy",  # Default, can be configured
+            "tagline": "Go deep or go home",
+        }
+        
+        # =====================================================================
         # CONSTRUCT COHERENCE BRIEF
         # =====================================================================
         
@@ -177,9 +197,11 @@ class CoherenceBriefBuilder:
             # Context
             article_context=idea.get("article_context_for_idea", ""),
             key_insights_used=idea.get("key_insights_used", []),
+            key_insights_content=key_insights_content,
             
             # Brand
             brand_values=brand_values,
+            brand_assets=brand_assets,
         )
     
     # =========================================================================

@@ -228,24 +228,69 @@ Input: Article only. System auto-suggests/assigns per-post params.
 
 ## Data Flow
 
+### Coherence Brief Evolution Flow
+
+```mermaid
+flowchart LR
+    subgraph Phase1["Phase 1: Ideation"]
+        A1[Article] --> A2[IdeaGenerator]
+        A2 --> A3[Ideas JSON]
+        A3 --> A4{Idea Filter?}
+        A4 -->|Yes| A5[Filtered Ideas]
+        A4 -->|No| A5
+        A5 --> A6[CoherenceBriefBuilder]
+        A6 --> A7[Brief Inicial]
+    end
+    
+    subgraph Phase3["Phase 3: Narrative"]
+        A7 --> B1[Narrative Architect]
+        B1 --> B2[Narrative Structure]
+        B2 --> B3[enrich_from_narrative_structure]
+        B3 --> B4[Brief + Narrative]
+    end
+    
+    subgraph Phase4["Phase 4: Content Generation"]
+        B4 --> C1[Copywriter]
+        B4 --> C2[Visual Composer]
+        C1 --> C3[Copy Guidelines]
+        C2 --> C4[Visual Preferences]
+        C3 --> C5[enrich_from_copywriting]
+        C4 --> C6[enrich_from_visual_composition]
+        C5 --> C7[Brief Completo Phase 4]
+        C6 --> C7
+    end
+    
+    subgraph Phase5["Phase 5: Finalization"]
+        C7 --> D1[Caption Writer]
+        D1 --> D2[Platform Constraints]
+        D2 --> D3[enrich_from_caption_writing]
+        D3 --> D4[Brief Final Completo]
+    end
+    
+    style A7 fill:#e1f5ff
+    style B4 fill:#fff4e1
+    style C7 fill:#e8f5e9
+    style D4 fill:#f3e5f5
+```
+
 ### Component Table
 
 |#|Component|Type|Inputs|Outputs|Responsibility|
 |---|---|---|---|---|---|
 |0|User Input|Manual|Article|`article.txt`|Single required input|
 |1|Post Ideator|AI|`article.txt`|`post_ideas.json`|Analyze + ideate 3–6 per-post ideas|
-|2|Idea Selector|Code/User|`post_ideas.json`|`selected_ideas.json`|Pick top N|
-|3|Parameter Resolver|Code|`selected_idea`, `libraries/`|`post_config.json`|Per-post params (palette, etc.)|
-|4|Coherence Brief Builder|Code|`post_config.json`, `selected_idea`|`coherence_brief.json`|Per-post cohesion doc|
-|5|Narrative Architect|AI|`post_config.json`, `coherence_brief.json`, `article.txt`|`narrative_structure.json`|Slide-by-slide skeleton|
+|2|Idea Filter|Code|`post_ideas.json`, `filter_config`|`filtered_ideas.json`|Filter/select ideas (optional)|
+|3|Coherence Brief Builder|Code|`filtered_idea`, `article_summary`, `libraries/`|`coherence_brief.json` (initial)|Per-post initial brief (Phase 1)|
+|4|Narrative Architect|AI|`coherence_brief.json`, `article.txt`|`narrative_structure.json`|Slide-by-slide skeleton + enrich brief|
+|5|Parameter Resolver|Code|`selected_idea`, `libraries/`|`post_config.json`|Per-post params (palette, etc.)|
 |6|Layout Resolver|Code|`narrative_structure.json`, `libraries/layouts`|`slide_layouts.json`|Per-slide layouts|
-|7|Copywriter|AI|`slide_layout`, `coherence_brief.json`, `article.txt`|`slide_content.json`|Text per slot|
-|8|Visual Composer|AI|`slide_layout`, `post_config.json`, `coherence_brief.json`|`visual_specs.json`|Design (no text)|
+|7|Copywriter|AI|`slide_layout`, `coherence_brief.json`, `article.txt`|`slide_content.json` + enrich brief|Text per slot + enrich brief|
+|8|Visual Composer|AI|`slide_layout`, `post_config.json`, `coherence_brief.json`|`visual_specs.json` + enrich brief|Design (no text) + enrich brief|
 |9|Prompt Builder (Image)|Code|`visual_specs.json`, `post_config.json`|`image_prompt.txt`|Image gen prompt|
 |10|Image Generator|AI-Image|`image_prompt.txt`|`background.png`|Background image|
 |11|Prompt Builder (Text)|Code|`slide_content.json`, `slide_layout`|`text_overlay.json`|Text rendering specs|
 |12|Image Compositor|Code|`background.png`, `text_overlay.json`, `brand_assets`|`final_slide.png`|Combine elements|
-|13|Caption Writer|AI|`post_config.json`, `all_slide_contents`, `coherence_brief.json`|`caption.json`|Per-post caption|
+|13|Caption Writer|AI|`post_config.json`, `all_slide_contents`, `coherence_brief.json`|`caption.json` + enrich brief|Per-post caption + enrich brief|
 |14|Output Assembler|Code|All slides, `caption.json`|`/output/post_xxx/`|Package per post|
 |15|Quality Validator|Code|All outputs|`validation_report.json`|Per-post scoring|
 
@@ -293,15 +338,136 @@ Input: Article only. System auto-suggests/assigns per-post params.
 }
 ```
 
-#### coherence_brief.json (Per-post)
+#### coherence_brief.json (Per-post, Evolutivo)
 
+**Brief Inicial (Phase 1)**:
 ```json
 {
-  "voice": {"tone": "professional", "vocabulary_level": "sophisticated"},
-  "emotions": {"primary": "urgency", "secondary": ["curiosity"]},
-  "visual": {"palette_id": "dark_professional_01", "mood": "dramatic"},
-  "content": {"keywords": ["AI", "failure"], "main_message": "string"},
-  "audience": {"persona": "C-level execs", "pain_points": ["wasted budgets"]}
+  "metadata": {
+    "post_id": "post_article_slug_idea_1",
+    "idea_id": "idea_1",
+    "platform": "linkedin",
+    "format": "carousel"
+  },
+  "voice": {
+    "tone": "professional",
+    "personality_traits": ["authoritative", "insightful"],
+    "vocabulary_level": "sophisticated",
+    "formality": "formal"
+  },
+  "visual": {
+    "palette_id": "brand_dark_professional",
+    "palette": {"primary": "#000000", "accent": "#0060FF", "theme": "dark"},
+    "typography_id": "brand_professional",
+    "style": "clean_professional_data_focused",
+    "mood": "dramatic_focused"
+  },
+  "emotions": {
+    "primary": "urgency",
+    "secondary": ["curiosity"],
+    "avoid": ["fear"]
+  },
+  "content": {
+    "keywords_to_emphasize": ["AI", "failure"],
+    "themes": ["AI", "project management"],
+    "main_message": "Organizational alignment is key to AI success",
+    "angle": "Uncovering hidden organizational pitfalls",
+    "hook": "Shocking: 85% of AI projects fail—but it's not the tech's fault"
+  },
+  "audience": {
+    "persona": "Tech leaders and executives",
+    "pain_points": ["wasted budgets", "project delays"],
+    "desires": ["successful AI implementation", "competitive edge"]
+  },
+  "context": {
+    "article_context": "The article highlights that 85% of AI projects fail...",
+    "key_insights_used": ["insight_1", "insight_2"],
+    "key_insights_content": [
+      {
+        "id": "insight_1",
+        "content": "85% of AI projects fail primarily due to organizational misalignment",
+        "type": "statistic",
+        "strength": 10,
+        "source_quote": "According to Gartner..."
+      }
+    ]
+  },
+  "brand": {
+    "values": ["go_deep_or_go_home"],
+    "assets": {
+      "handle": "@syntropy",
+      "tagline": "Go deep or go home"
+    }
+  },
+  "evolution": {
+    "narrative_structure": null,
+    "narrative_pacing": null,
+    "transition_style": null,
+    "copy_guidelines": null,
+    "cta_guidelines": null,
+    "visual_preferences": null,
+    "platform_constraints": null
+  }
+}
+```
+
+**Após Phase 3 (Narrative Architect)** - Campos adicionados:
+```json
+{
+  "evolution": {
+    "narrative_structure": {
+      "pacing": "moderate",
+      "transition_style": "smooth",
+      "slides": [
+        {
+          "number": 1,
+          "module": "hook",
+          "purpose": "Grab attention with stat",
+          "emotions": ["shock"],
+          "content_slots": {"headline": {"max_chars": 60}}
+        }
+      ]
+    },
+    "narrative_pacing": "moderate",
+    "transition_style": "smooth"
+  }
+}
+```
+
+**Após Phase 4 (Copywriter + Visual Composer)** - Campos adicionados:
+```json
+{
+  "evolution": {
+    "copy_guidelines": {
+      "headline_style": "statistic_led",
+      "body_style": "conversational_professional"
+    },
+    "cta_guidelines": {
+      "type": "soft",
+      "position": "final_slide",
+      "tone": "invitational",
+      "suggested_text": "Learn more about..."
+    },
+    "visual_preferences": {
+      "layout_style": "centered",
+      "text_hierarchy": "bold_headlines",
+      "element_density": "moderate"
+    }
+  }
+}
+```
+
+**Após Phase 5 (Caption Writer)** - Brief Completo:
+```json
+{
+  "evolution": {
+    "platform_constraints": {
+      "max_caption_length": 3000,
+      "hashtag_count": 3,
+      "cta_format": "professional",
+      "mention_style": "formal"
+    }
+  }
 }
 ```
 
@@ -370,55 +536,205 @@ Input: Article only. System auto-suggests/assigns per-post params.
 
 ## Coherence System
 
+### Coherence Brief: Modelo Evolutivo
+
+O **Coherence Brief é um documento dinâmico e evolutivo**, não estático. Ele começa com informações de alto nível na Phase 1 e é enriquecido por cada fase subsequente conforme os agentes especializados geram informações mais detalhadas.
+
+#### Fluxo Evolutivo
+
+```mermaid
+flowchart TD
+    A[Phase 1: Ideation] --> B[Brief Inicial<br/>Alto Nível]
+    B --> C[Phase 3: Narrative Architect]
+    C --> D[Brief + Estrutura Narrativa]
+    D --> E[Phase 4: Copywriter]
+    D --> F[Phase 4: Visual Composer]
+    E --> G[Brief + Diretrizes de Copy]
+    F --> H[Brief + Preferências Visuais]
+    G --> I[Phase 5: Caption Writer]
+    H --> I
+    I --> J[Brief Completo<br/>Baixo Nível]
+    
+    style B fill:#e1f5ff
+    style D fill:#fff4e1
+    style G fill:#e8f5e9
+    style H fill:#e8f5e9
+    style J fill:#f3e5f5
+```
+
+#### Estrutura do Brief por Fase
+
+```mermaid
+graph TB
+    subgraph Phase1["Phase 1: Brief Inicial (Alto Nível)"]
+        P1A[Voice: tone, personality, vocabulary]
+        P1B[Visual: palette, typography, style, mood]
+        P1C[Emotions: primary, secondary, avoid]
+        P1D[Content: keywords, themes, message, angle]
+        P1E[Audience: persona, pain_points, desires]
+        P1F[Structure: objective, arc alto nível, slides estimados]
+        P1G[Context: article_context, key_insights_content]
+        P1H[Brand: values, brand_assets]
+    end
+    
+    subgraph Phase3["Phase 3: Narrative Architect → Adiciona"]
+        P3A[narrative_structure]
+        P3B[narrative_pacing]
+        P3C[transition_style]
+    end
+    
+    subgraph Phase4["Phase 4: Copywriter + Visual Composer → Adicionam"]
+        P4A[copy_guidelines]
+        P4B[cta_guidelines]
+        P4C[visual_preferences]
+    end
+    
+    subgraph Phase5["Phase 5: Caption Writer → Adiciona"]
+        P5A[platform_constraints]
+    end
+    
+    Phase1 --> Phase3
+    Phase3 --> Phase4
+    Phase4 --> Phase5
+    
+    style Phase1 fill:#e1f5ff
+    style Phase3 fill:#fff4e1
+    style Phase4 fill:#e8f5e9
+    style Phase5 fill:#f3e5f5
+```
+
 ### Coherence Brief Components
+
+#### Brief Inicial (Phase 1)
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                     COHERENCE BRIEF                             │
+│                  COHERENCE BRIEF (INICIAL)                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  VOICE                          VISUAL                          │
 │  ├─ tone                        ├─ palette_id                   │
-│  ├─ personality_traits          ├─ palette_description          │
-│  ├─ vocabulary_level            ├─ style                        │
-│  └─ formality                   └─ mood                         │
+│  ├─ personality_traits          ├─ palette (cores completas)    │
+│  ├─ vocabulary_level            ├─ typography_id                │
+│  └─ formality                   ├─ typography                   │
+│                                 ├─ style                        │
+│                                 └─ mood                         │
 │                                                                 │
 │  EMOTIONS                       CONTENT                         │
 │  ├─ primary                     ├─ keywords_to_emphasize        │
 │  ├─ secondary                   ├─ themes                       │
-│  └─ avoid                       └─ main_message                 │
+│  ├─ avoid                       ├─ main_message                 │
+│  └─ target                      ├─ value_proposition            │
+│                                 ├─ angle                        │
+│                                 └─ hook                         │
 │                                                                 │
 │  AUDIENCE                       CONSTRAINTS                     │
 │  ├─ persona                     ├─ avoid_topics                 │
 │  ├─ pain_points                 └─ required_elements            │
 │  └─ desires                                                     │
 │                                                                 │
+│  STRUCTURE                      CONTEXT                         │
+│  ├─ objective                   ├─ article_context              │
+│  ├─ narrative_arc (alto nível)   ├─ key_insights_used            │
+│  └─ estimated_slides            └─ key_insights_content         │
+│                                                                 │
+│  BRAND                                                          │
+│  ├─ values                      ├─ brand_assets                 │
+│                                 │  └─ handle, tagline           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+#### Campos Evolutivos (Adicionados por Fases Posteriores)
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│              CAMPOS EVOLUTIVOS (Phase 3-5)                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Phase 3: Narrative Architect                                  │
+│  ├─ narrative_structure (estrutura detalhada slide por slide)  │
+│  ├─ narrative_pacing (fast/moderate/deliberate)                │
+│  └─ transition_style (abrupt/smooth/dramatic)                  │
+│                                                                 │
+│  Phase 4: Copywriter                                           │
+│  ├─ copy_guidelines (padrões de escrita)                       │
+│  └─ cta_guidelines (detalhes de CTA)                           │
+│                                                                 │
+│  Phase 4: Visual Composer                                      │
+│  └─ visual_preferences (preferências de layout/composição)     │
+│                                                                 │
+│  Phase 5: Caption Writer                                        │
+│  └─ platform_constraints (limites e formatos da plataforma)    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ### Coherence Brief (Per-Post)
 
-Created in Phase 2, travels through Phases 3–5. Ensures per-post consistency in voice, visuals, etc.
+**Criado na Phase 1**, evolui através das Phases 3–5. Garante consistência per-post em voice, visuals, etc.
 
-|Component|Fields Used By|Purpose|
-|---|---|---|
-|Post Ideator|N/A (pre-brief)|Initial alignment|
-|Narrative Architect|voice, emotions, content|Arc per slide|
-|Copywriter|voice, content, audience|Text tone|
-|Visual Composer|visual, emotions|Design mood|
-|Caption Writer|voice, platform|Caption fit|
+|Component|Fields Used By|Purpose|Context Method|
+|---|---|---|---|
+|Post Ideator|N/A (pre-brief)|Initial alignment|N/A|
+|Narrative Architect|voice, emotions, content, structure|Arc per slide|`to_narrative_architect_context()`|
+|Copywriter|voice, content, audience, narrative_structure|Text tone|`to_copywriter_context()`|
+|Visual Composer|visual, emotions, narrative_structure|Design mood|`to_visual_composer_context()`|
+|Caption Writer|voice, platform, cta_guidelines, platform_constraints|Caption fit|`to_caption_writer_context()`|
 
-Example in prompt:
+#### Métodos de Enriquecimento
 
+Cada fase adiciona informações ao brief usando métodos específicos:
+
+- **Phase 3**: `brief.enrich_from_narrative_structure(narrative_structure)`
+- **Phase 4 (Copywriter)**: `brief.enrich_from_copywriting(copy_guidelines)`
+- **Phase 4 (Visual Composer)**: `brief.enrich_from_visual_composition(visual_preferences)`
+- **Phase 5**: `brief.enrich_from_caption_writing(platform_constraints)`
+
+#### Exemplo de Uso por Fase
+
+**Narrative Architect (Phase 3)**:
 ```text
-COHERENCE BRIEF:
+COHERENCE BRIEF (Narrative Architect):
 - Tone: Professional
 - Primary emotion: Urgency
 - Keywords: AI, failure
 - Persona: C-level execs
+- Narrative Arc (high-level): Hook → Problem → Solution → CTA
+- Estimated Slides: 7
+
+TASK: Create detailed slide-by-slide narrative structure.
+```
+
+**Copywriter (Phase 4)**:
+```text
+COHERENCE BRIEF (Copywriter):
+- Voice: Professional, sophisticated vocabulary, formal
+- Content: Main message, keywords, angle
+- Audience: Persona, pain points, desires
+- Narrative Structure: [detailed structure from Phase 3]
 
 TASK: Write headline for slide 1 (hook). Max 60 chars.
+```
+
+**Visual Composer (Phase 4)**:
+```text
+COHERENCE BRIEF (Visual Composer):
+- Visual: Palette, typography, canvas, style, mood
+- Emotions: Primary, secondary, avoid
+- Narrative Structure: [pacing, transitions from Phase 3]
+
+TASK: Generate visual specs for slide 1.
+```
+
+**Caption Writer (Phase 5)**:
+```text
+COHERENCE BRIEF (Caption Writer):
+- Platform: LinkedIn
+- Voice: Professional, formal
+- CTA Guidelines: [from Copywriter]
+- Platform Constraints: max_length=3000, hashtag_count=3
+
+TASK: Write platform-specific caption.
 ```
 
 ---

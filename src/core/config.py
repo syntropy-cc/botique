@@ -115,6 +115,12 @@ class IdeationConfig:
     # Hook limits
     hook_max_chars: int = 100
     
+    # Filter configuration
+    filter_enabled: bool = False
+    filter_min_confidence: float = 0.7
+    filter_strategy: str = "top"  # "top", "diverse", or "all"
+    filter_max_count: Optional[int] = None
+    
     def __init__(
         self,
         min_ideas: Optional[int] = None,
@@ -155,6 +161,10 @@ class IdeationConfig:
         self.personality_traits_examples_list = kwargs.get("personality_traits_examples_list", ["authoritative", "empathetic"])
         self.allowed_objectives = kwargs.get("allowed_objectives", ["engagement", "awareness", "conversion"])
         self.hook_max_chars = kwargs.get("hook_max_chars", 100)
+        self.filter_enabled = kwargs.get("filter_enabled", False)
+        self.filter_min_confidence = kwargs.get("filter_min_confidence", 0.7)
+        self.filter_strategy = kwargs.get("filter_strategy", "top")
+        self.filter_max_count = kwargs.get("filter_max_count", None)
         
         # Map compatibility fields
         if min_ideas is not None:
