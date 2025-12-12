@@ -1,4 +1,6 @@
 botique_venv/
 articles/
 output/
+logs/
 .env
+src/__pycache__/
