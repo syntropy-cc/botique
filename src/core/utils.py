@@ -322,15 +322,35 @@ def validate_llm_json_response(
     # Validate list structures
     if list_validations:
         for key, validation in list_validations.items():
-            if key not in payload:
-                continue  # Already validated by top-level check
+            # Support nested paths like "article_summary.key_insights"
+            if "." in key:
+                parts = key.split(".")
+                nested_obj = payload
+                for part in parts[:-1]:
+                    if part not in nested_obj:
+                        continue  # Skip if parent doesn't exist
+                    nested_obj = nested_obj[part]
+                    if not isinstance(nested_obj, dict):
+                        continue  # Skip if parent is not a dict
+                
+                list_key = parts[-1]
+                if list_key not in nested_obj:
+                    continue  # Skip if list doesn't exist
+                
+                list_data = nested_obj[list_key]
+            else:
+                # Top-level list
+                if key not in payload:
+                    continue  # Already validated by top-level check
+                list_data = payload[key]
             
-            list_data = payload[key]
             if not isinstance(list_data, list):
                 raise ValueError(f"'{key}' must be a list")
             
+            # Allow empty lists (some fields like avoid_topics, risks can be empty)
+            # Only validate structure if list is not empty
             if len(list_data) == 0:
-                raise ValueError(f"'{key}' list cannot be empty")
+                continue
             
             # If validation is a list of required keys
             if isinstance(validation, list):

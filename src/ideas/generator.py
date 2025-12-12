@@ -57,7 +57,7 @@ class IdeaGenerator:
         # Call LLM
         raw_response = self.llm.generate(prompt)
         
-        # Parse and validate response
+        # Parse and validate response according to post_ideator.md template structure
         payload = validate_llm_json_response(
             raw_response=raw_response,
             top_level_keys=["article_summary", "ideas"],
@@ -65,10 +65,12 @@ class IdeaGenerator:
                 "article_summary": [
                     "title",
                     "main_thesis",
+                    "detected_tone",
                     "key_insights",
                     "themes",
                     "keywords",
                     "main_message",
+                    "avoid_topics",
                 ]
             },
             list_validations={
@@ -78,15 +80,56 @@ class IdeaGenerator:
                     "format",
                     "tone",
                     "persona",
+                    "personality_traits",
                     "objective",
                     "angle",
                     "hook",
                     "narrative_arc",
+                    "vocabulary_level",
+                    "formality",
                     "key_insights_used",
+                    "target_emotions",
+                    "primary_emotion",
+                    "secondary_emotions",
+                    "avoid_emotions",
+                    "value_proposition",
+                    "article_context_for_idea",
+                    "idea_explanation",
                     "estimated_slides",
                     "confidence",
-                ]
+                    "rationale",
+                    "risks",
+                    "keywords_to_emphasize",
+                    "pain_points",
+                    "desires",
+                ],
+                "article_summary.key_insights": [
+                    "id",
+                    "content",
+                    "type",
+                    "strength",
+                    "source_quote",
+                ],
             },
         )
+        
+        # Validate minimum counts (template requirements)
+        ideas = payload["ideas"]
+        if len(ideas) == 0:
+            raise ValueError("At least one idea must be generated")
+        
+        if len(ideas) < config.num_ideas_min:
+            raise ValueError(
+                f"Generated {len(ideas)} ideas, but minimum is {config.num_ideas_min}"
+            )
+        
+        key_insights = payload["article_summary"]["key_insights"]
+        if len(key_insights) == 0:
+            raise ValueError("At least one key insight must be generated")
+        
+        if len(key_insights) < config.num_insights_min:
+            raise ValueError(
+                f"Generated {len(key_insights)} insights, but minimum is {config.num_insights_min}"
+            )
         
         return payload
