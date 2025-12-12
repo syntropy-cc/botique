@@ -4,3 +4,4 @@ output/
 logs/
 .env
 src/__pycache__/
+src/core/__pycache__/
