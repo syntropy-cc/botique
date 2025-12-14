@@ -23,6 +23,15 @@ PROMPTS_DIR = ROOT_DIR / "prompts"
 OUTPUT_DIR = ROOT_DIR / "output"
 LIBRARIES_DIR = ROOT_DIR / "libraries"
 
+# LLM Logging Database
+# Can be overridden via LLM_LOGS_DB_PATH environment variable
+import os
+LLM_LOGS_DB_PATH = os.getenv("LLM_LOGS_DB_PATH")
+if LLM_LOGS_DB_PATH:
+    LLM_LOGS_DB_PATH = Path(LLM_LOGS_DB_PATH)
+else:
+    LLM_LOGS_DB_PATH = ROOT_DIR / "llm_logs.db"
+
 # Prompt template paths
 POST_IDEATOR_TEMPLATE = PROMPTS_DIR / "post_ideator.md"
 NARRATIVE_ARCHITECT_TEMPLATE = PROMPTS_DIR / "narrative_architect.md"

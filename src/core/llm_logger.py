@@ -2,6 +2,7 @@
 LLM Logger module
 
 Logging system for tracking LLM API calls with inputs, outputs, and metrics.
+Supports both SQL database (primary) and JSON file (legacy) backends.
 
 Location: src/core/llm_logger.py
 """
@@ -14,6 +15,9 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from .llm_log_db import db_connection, get_db_path, init_database
+from .llm_pricing import calculate_cost
 
 
 class LLMLogger:
@@ -44,6 +48,9 @@ class LLMLogger:
         output_dir: Optional[Path] = None,
         central_logs_dir: Optional[Path] = None,
         enabled: bool = True,
+        db_path: Optional[Path] = None,
+        use_sql: bool = True,
+        use_json: bool = True,
     ):
         """
         Initialize LLM logger.
@@ -52,17 +59,30 @@ class LLMLogger:
             output_dir: Base output directory (defaults to OUTPUT_DIR)
             central_logs_dir: Centralized logs directory (optional)
             enabled: Whether logging is enabled (default: True)
+            db_path: Path to SQL database (uses default if None)
+            use_sql: Whether to write to SQL database (default: True)
+            use_json: Whether to write to JSON files (default: True, for compatibility)
         """
         from .config import OUTPUT_DIR
         
         self.enabled = enabled
         self.output_dir = output_dir or OUTPUT_DIR
         self.central_logs_dir = central_logs_dir or self._get_central_logs_dir()
+        self.db_path = db_path or get_db_path()
+        self.use_sql = use_sql
+        self.use_json = use_json
         
-        # Session tracking
+        # Initialize database if using SQL
+        if self.use_sql:
+            init_database(self.db_path)
+        
+        # Session tracking (for JSON compatibility and trace_id)
         self.session_id = str(uuid.uuid4())
         self.pipeline_start = datetime.utcnow().isoformat() + "Z"
         self.calls: List[Dict[str, Any]] = []
+        
+        # Current trace ID (for SQL logging)
+        self.current_trace_id: Optional[str] = None
         
         # Context tracking
         self.current_article_slug: Optional[str] = None
@@ -155,6 +175,8 @@ class LLMLogger:
         """
         Calculate estimated cost based on model and tokens.
         
+        Uses database pricing if available, falls back to MODEL_COSTS.
+        
         Args:
             model: Model identifier
             tokens_input: Input tokens
@@ -166,6 +188,18 @@ class LLMLogger:
         if tokens_input is None or tokens_output is None:
             return None
         
+        # Try database pricing first
+        if self.use_sql:
+            try:
+                cost_input, cost_output, cost_total = calculate_cost(
+                    model, tokens_input, tokens_output, self.db_path
+                )
+                if cost_total is not None:
+                    return cost_total
+            except Exception:
+                pass  # Fall back to MODEL_COSTS
+        
+        # Fall back to MODEL_COSTS
         costs = self.MODEL_COSTS.get(model)
         if not costs:
             return None
@@ -262,6 +296,43 @@ class LLMLogger:
         }
         
         self.calls.append(log_entry)
+        
+        # Also write to SQL if enabled
+        if self.use_sql:
+            self._write_llm_event_to_sql(
+                trace_id=self.current_trace_id or self.session_id,
+                name=f"{phase}.{function}",
+                model=model,
+                input_text=prompt,
+                input_obj={
+                    "prompt": prompt,
+                    "prompt_length": len(prompt),
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "base_url": base_url,
+                },
+                output_text=response,
+                output_obj={
+                    "content": response if response else None,
+                    "content_length": len(response) if response else 0,
+                    "truncated": False,
+                },
+                duration_ms=duration_ms,
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+                tokens_total=tokens_total,
+                status=status,
+                error=error,
+                metadata={
+                    "phase": phase,
+                    "function": function,
+                    "context": {
+                        "article_slug": self.current_article_slug,
+                        "post_id": self.current_post_id,
+                        "slide_number": self.current_slide_number,
+                    },
+                },
+            )
     
     def get_session_id(self) -> str:
         """Get current session ID"""
@@ -381,7 +452,283 @@ class LLMLogger:
         self.session_id = str(uuid.uuid4())
         self.pipeline_start = datetime.utcnow().isoformat() + "Z"
         self.calls = []
+        self.current_trace_id = None
         self.current_article_slug = None
         self.current_post_id = None
         self.current_slide_number = None
+    
+    # =============================================================================
+    # SQL Backend Methods
+    # =============================================================================
+    
+    def create_trace(
+        self,
+        name: str,
+        user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        tags: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Create a new trace (high-level execution).
+        
+        Args:
+            name: Human-readable trace name (e.g., "generate_ideas", "full_pipeline")
+            user_id: Optional user identifier
+            tenant_id: Optional tenant identifier
+            tags: Optional comma-separated tags
+            metadata: Optional metadata dictionary (will be JSON-serialized)
+            
+        Returns:
+            Trace ID (UUID string)
+        """
+        if not self.enabled or not self.use_sql:
+            # Return session_id for compatibility
+            return self.session_id
+        
+        trace_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat() + "Z"
+        
+        metadata_json = json.dumps(metadata) if metadata else None
+        
+        with db_connection(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO traces 
+                (id, created_at, name, user_id, tenant_id, tags, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                trace_id,
+                now,
+                name,
+                user_id,
+                tenant_id,
+                tags,
+                metadata_json,
+            ))
+            conn.commit()
+        
+        self.current_trace_id = trace_id
+        return trace_id
+    
+    def log_llm_event(
+        self,
+        trace_id: str,
+        name: str,
+        model: str,
+        input_text: Optional[str],
+        input_obj: Optional[Dict[str, Any]],
+        output_text: Optional[str],
+        output_obj: Optional[Dict[str, Any]],
+        duration_ms: float,
+        tokens_input: Optional[int] = None,
+        tokens_output: Optional[int] = None,
+        tokens_total: Optional[int] = None,
+        parent_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Log an LLM event to SQL database.
+        
+        Args:
+            trace_id: Trace ID (from create_trace)
+            name: Event name (e.g., "deepseek-chat", "phase1_ideation.generate_ideas")
+            model: Model identifier
+            input_text: Main prompt or textual input
+            input_obj: Full input object (will be JSON-serialized)
+            output_text: Main response or textual output
+            output_obj: Full output object (will be JSON-serialized)
+            duration_ms: Duration in milliseconds
+            tokens_input: Input tokens
+            tokens_output: Output tokens
+            tokens_total: Total tokens
+            parent_id: Optional parent event ID (for hierarchical relationships)
+            metadata: Optional metadata dictionary
+            
+        Returns:
+            Event ID (UUID string)
+        """
+        return self._write_llm_event_to_sql(
+            trace_id=trace_id,
+            name=name,
+            model=model,
+            input_text=input_text,
+            input_obj=input_obj,
+            output_text=output_text,
+            output_obj=output_obj,
+            duration_ms=duration_ms,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
+            tokens_total=tokens_total,
+            parent_id=parent_id,
+            metadata=metadata,
+        )
+    
+    def _write_llm_event_to_sql(
+        self,
+        trace_id: str,
+        name: str,
+        model: str,
+        input_text: Optional[str],
+        input_obj: Optional[Dict[str, Any]],
+        output_text: Optional[str],
+        output_obj: Optional[Dict[str, Any]],
+        duration_ms: float,
+        tokens_input: Optional[int] = None,
+        tokens_output: Optional[int] = None,
+        tokens_total: Optional[int] = None,
+        parent_id: Optional[str] = None,
+        status: str = "success",
+        error: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Internal method to write LLM event to SQL."""
+        if not self.enabled or not self.use_sql:
+            return str(uuid.uuid4())  # Return dummy ID
+        
+        event_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat() + "Z"
+        
+        # Calculate costs
+        cost_input, cost_output, cost_total = calculate_cost(
+            model, tokens_input, tokens_output, self.db_path
+        )
+        
+        # Serialize JSON fields
+        input_json = json.dumps(input_obj) if input_obj else None
+        output_json = json.dumps(output_obj) if output_obj else None
+        metadata_json = json.dumps(metadata) if metadata else None
+        
+        with db_connection(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO events 
+                (id, trace_id, parent_id, created_at, type, name, model, role,
+                 input_text, input_json, output_text, output_json, error, duration_ms,
+                 tokens_input, tokens_output, tokens_total,
+                 cost_input, cost_output, cost_total, metadata_json)
+                VALUES (?, ?, ?, ?, 'llm', ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                event_id,
+                trace_id,
+                parent_id,
+                now,
+                name,
+                model,
+                input_text,
+                input_json,
+                output_text,
+                output_json,
+                error,
+                int(round(duration_ms)),
+                tokens_input,
+                tokens_output,
+                tokens_total,
+                cost_input,
+                cost_output,
+                cost_total,
+                metadata_json,
+            ))
+            conn.commit()
+        
+        return event_id
+    
+    def log_step_event(
+        self,
+        trace_id: str,
+        name: str,
+        input_text: Optional[str] = None,
+        input_obj: Optional[Dict[str, Any]] = None,
+        output_text: Optional[str] = None,
+        output_obj: Optional[Dict[str, Any]] = None,
+        duration_ms: Optional[float] = None,
+        parent_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        type: str = "step",
+    ) -> str:
+        """
+        Log a non-LLM workflow step event to SQL database.
+        
+        Args:
+            trace_id: Trace ID (from create_trace)
+            name: Event name (e.g., "preprocess_prompt", "validate_json", "phase1_start")
+            input_text: Optional textual input
+            input_obj: Optional input object (will be JSON-serialized)
+            output_text: Optional textual output
+            output_obj: Optional output object (will be JSON-serialized)
+            duration_ms: Optional duration in milliseconds
+            parent_id: Optional parent event ID (for hierarchical relationships)
+            metadata: Optional metadata dictionary
+            type: Event type (default: "step", can be "tool", "preprocess", "postprocess", "system")
+            
+        Returns:
+            Event ID (UUID string)
+        """
+        if not self.enabled or not self.use_sql:
+            return str(uuid.uuid4())  # Return dummy ID
+        
+        event_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat() + "Z"
+        
+        # Serialize JSON fields
+        input_json = json.dumps(input_obj) if input_obj else None
+        output_json = json.dumps(output_obj) if output_obj else None
+        metadata_json = json.dumps(metadata) if metadata else None
+        
+        with db_connection(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO events 
+                (id, trace_id, parent_id, created_at, type, name, model, role,
+                 input_text, input_json, output_text, output_json, error, duration_ms,
+                 tokens_input, tokens_output, tokens_total,
+                 cost_input, cost_output, cost_total, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?)
+            """, (
+                event_id,
+                trace_id,
+                parent_id,
+                now,
+                type,
+                name,
+                input_text,
+                input_json,
+                output_text,
+                output_json,
+                int(round(duration_ms)) if duration_ms is not None else None,
+                metadata_json,
+            ))
+            conn.commit()
+        
+        return event_id
+    
+    def set_event_quality(
+        self,
+        event_id: str,
+        score: Optional[float] = None,
+        label: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Set quality metrics for an event.
+        
+        Args:
+            event_id: Event ID
+            score: Optional quality score (0-1 or 0-5)
+            label: Optional quality label (e.g., "good", "bad", "needs_review")
+            metadata: Optional quality metadata (who rated, criteria, etc.)
+        """
+        if not self.enabled or not self.use_sql:
+            return
+        
+        quality_metadata_json = json.dumps(metadata) if metadata else None
+        
+        with db_connection(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE events 
+                SET quality_score = ?, quality_label = ?, quality_metadata_json = ?
+                WHERE id = ?
+            """, (score, label, quality_metadata_json, event_id))
+            conn.commit()
 

@@ -170,6 +170,13 @@ class Orchestrator:
         if selection_config is None:
             selection_config = SelectionConfig()
         
+        # Create trace for this pipeline run
+        import time
+        trace_id = self.logger.create_trace(
+            name="full_pipeline",
+            metadata={"article_path": str(article_path)},
+        )
+        
         # Phase 1: Ideation
         print("\n" + "="*70)
         print("PHASE 1: IDEATION")
@@ -179,11 +186,35 @@ class Orchestrator:
         article_slug_preview = article_path.stem
         self.logger.set_context(article_slug=article_slug_preview)
         
+        # Log phase start
+        phase1_start_time = time.time()
+        phase1_start_event = self.logger.log_step_event(
+            trace_id=trace_id,
+            name="phase1_ideation_start",
+            type="system",
+            metadata={"article_slug_preview": article_slug_preview},
+        )
+        
         phase1_result = self.run_ideas_phase(article_path, ideation_config)
         article_slug = phase1_result["article_slug"]
         
         # Update logger context with actual article slug
         self.logger.set_context(article_slug=article_slug)
+        
+        # Log phase end
+        phase1_duration_ms = (time.time() - phase1_start_time) * 1000
+        self.logger.log_step_event(
+            trace_id=trace_id,
+            name="phase1_ideation_end",
+            type="system",
+            duration_ms=phase1_duration_ms,
+            parent_id=phase1_start_event,
+            metadata={
+                "article_slug": article_slug,
+                "ideas_count": phase1_result.get("ideas_count", 0),
+                "filtered_count": phase1_result.get("filtered_count"),
+            },
+        )
         
         print(f"Generated {phase1_result['ideas_count']} ideas")
         
@@ -211,10 +242,32 @@ class Orchestrator:
         print("PHASE 2: SELECTION")
         print("="*70)
         
+        # Log phase start
+        phase2_start_time = time.time()
+        phase2_start_event = self.logger.log_step_event(
+            trace_id=trace_id,
+            name="phase2_selection_start",
+            type="system",
+            metadata={"ideas_count": phase1_result.get("ideas_count", 0)},
+        )
+        
         phase2_result = self.run_selection_phase(
             ideas_payload=phase1_result,
             config=selection_config,
             article_slug=article_slug,
+        )
+        
+        # Log phase end
+        phase2_duration_ms = (time.time() - phase2_start_time) * 1000
+        self.logger.log_step_event(
+            trace_id=trace_id,
+            name="phase2_selection_end",
+            type="system",
+            duration_ms=phase2_duration_ms,
+            parent_id=phase2_start_event,
+            metadata={
+                "selection_count": phase2_result.get("selection_count", 0),
+            },
         )
         
         print(f"Selected {phase2_result['selection_count']} ideas")
@@ -225,10 +278,32 @@ class Orchestrator:
         print("PHASE 3: COHERENCE")
         print("="*70)
         
+        # Log phase start
+        phase3_start_time = time.time()
+        phase3_start_event = self.logger.log_step_event(
+            trace_id=trace_id,
+            name="phase3_coherence_start",
+            type="system",
+            metadata={"selected_count": phase2_result.get("selection_count", 0)},
+        )
+        
         phase3_result = self.run_coherence_phase(
             selected_ideas=phase2_result["selected_ideas"],
             article_summary=phase1_result["article_summary"],
             article_slug=article_slug,
+        )
+        
+        # Log phase end
+        phase3_duration_ms = (time.time() - phase3_start_time) * 1000
+        self.logger.log_step_event(
+            trace_id=trace_id,
+            name="phase3_coherence_end",
+            type="system",
+            duration_ms=phase3_duration_ms,
+            parent_id=phase3_start_event,
+            metadata={
+                "briefs_count": phase3_result.get("briefs_count", 0),
+            },
         )
         
         print(f"Generated {phase3_result['briefs_count']} coherence briefs")
