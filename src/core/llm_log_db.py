@@ -252,6 +252,44 @@ def init_database(db_path: Optional[Path] = None) -> None:
                 )
             """)
         
+        # Create prompts table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS prompts (
+                id TEXT PRIMARY KEY,
+                prompt_key TEXT NOT NULL,
+                version TEXT NOT NULL,
+                template TEXT NOT NULL,
+                template_hash TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                metadata_json TEXT,
+                UNIQUE(prompt_key, version)
+            )
+        """)
+        
+        # Add template_hash column if it doesn't exist (migration for existing databases)
+        try:
+            cursor.execute("ALTER TABLE prompts ADD COLUMN template_hash TEXT")
+            # Update existing rows with hash if column was just added
+            cursor.execute("SELECT id, template FROM prompts WHERE template_hash IS NULL")
+            rows = cursor.fetchall()
+            if rows:
+                import hashlib
+                for row in rows:
+                    template_hash = hashlib.sha256(row["template"].encode('utf-8')).hexdigest()
+                    cursor.execute("UPDATE prompts SET template_hash = ? WHERE id = ?", (template_hash, row["id"]))
+        except Exception:
+            # Column already exists, ignore
+            pass
+        
+        # Add prompt_id column to events table if it doesn't exist
+        # This migration is idempotent and backward compatible
+        try:
+            cursor.execute("ALTER TABLE events ADD COLUMN prompt_id TEXT")
+        except Exception:
+            # Column already exists, ignore
+            pass
+        
         # Create model_pricing table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS model_pricing (
@@ -267,10 +305,14 @@ def init_database(db_path: Optional[Path] = None) -> None:
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_events_trace_id ON events(trace_id)",
             "CREATE INDEX IF NOT EXISTS idx_events_parent_id ON events(parent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_events_prompt_id ON events(prompt_id)",
             "CREATE INDEX IF NOT EXISTS idx_events_type ON events(type)",
             "CREATE INDEX IF NOT EXISTS idx_events_model ON events(model)",
             "CREATE INDEX IF NOT EXISTS idx_events_name ON events(name)",
             "CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_prompts_key_version ON prompts(prompt_key, version)",
+            "CREATE INDEX IF NOT EXISTS idx_prompts_key ON prompts(prompt_key)",
+            "CREATE INDEX IF NOT EXISTS idx_prompts_key_hash ON prompts(prompt_key, template_hash)",
             "CREATE INDEX IF NOT EXISTS idx_traces_user_id ON traces(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_traces_tenant_id ON traces(tenant_id)",
             "CREATE INDEX IF NOT EXISTS idx_traces_created_at ON traces(created_at)",

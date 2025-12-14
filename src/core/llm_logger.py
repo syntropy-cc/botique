@@ -225,6 +225,7 @@ class LLMLogger:
         error: Optional[str] = None,
         phase: Optional[str] = None,
         function: Optional[str] = None,
+        prompt_id: Optional[str] = None,
     ):
         """
         Log an LLM API call.
@@ -244,6 +245,7 @@ class LLMLogger:
             error: Error message if status is "error"
             phase: Phase identifier (auto-detected if None)
             function: Function name (auto-detected if None)
+            prompt_id: Optional prompt ID for version tracking
         """
         if not self.enabled:
             return
@@ -321,6 +323,7 @@ class LLMLogger:
                 tokens_input=tokens_input,
                 tokens_output=tokens_output,
                 tokens_total=tokens_total,
+                prompt_id=prompt_id,
                 status=status,
                 error=error,
                 metadata={
@@ -529,6 +532,7 @@ class LLMLogger:
         tokens_output: Optional[int] = None,
         tokens_total: Optional[int] = None,
         parent_id: Optional[str] = None,
+        prompt_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
@@ -547,6 +551,7 @@ class LLMLogger:
             tokens_output: Output tokens
             tokens_total: Total tokens
             parent_id: Optional parent event ID (for hierarchical relationships)
+            prompt_id: Optional prompt ID (required for LLM events to track prompt version)
             metadata: Optional metadata dictionary
             
         Returns:
@@ -580,6 +585,7 @@ class LLMLogger:
             tokens_output=tokens_output,
             tokens_total=tokens_total,
             parent_id=parent_id,
+            prompt_id=prompt_id,
             metadata=metadata,
         )
     
@@ -597,6 +603,7 @@ class LLMLogger:
         tokens_output: Optional[int] = None,
         tokens_total: Optional[int] = None,
         parent_id: Optional[str] = None,
+        prompt_id: Optional[str] = None,
         status: str = "success",
         error: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -622,15 +629,16 @@ class LLMLogger:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO events 
-                (id, trace_id, parent_id, created_at, type, name, model, role,
+                (id, trace_id, parent_id, prompt_id, created_at, type, name, model, role,
                  input_text, input_json, output_text, output_json, error, duration_ms,
                  tokens_input, tokens_output, tokens_total,
                  cost_input, cost_output, cost_total, metadata_json)
-                VALUES (?, ?, ?, ?, 'llm', ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 'llm', ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 event_id,
                 trace_id,
                 parent_id,
+                prompt_id,
                 now,
                 name,
                 model,

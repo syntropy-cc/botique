@@ -481,3 +481,229 @@ def get_cost_summary(
             "aggregations": aggregations,
         }
 
+
+def get_prompt_versions_with_usage(
+    prompt_key: str,
+    db_path: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Get all versions of a prompt with their usage count.
+    
+    Args:
+        prompt_key: Logical identifier of the prompt
+        db_path: Path to database (uses default if None)
+        
+    Returns:
+        List of dictionaries with prompt version data and usage statistics
+    """
+    if db_path is None:
+        db_path = get_db_path()
+    
+    with db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                p.id,
+                p.prompt_key,
+                p.version,
+                p.template,
+                p.description,
+                p.created_at,
+                p.metadata_json,
+                COUNT(e.id) as usage_count
+            FROM prompts p
+            LEFT JOIN events e ON p.id = e.prompt_id
+            WHERE p.prompt_key = ?
+            GROUP BY p.id, p.prompt_key, p.version, p.template, p.description, p.created_at, p.metadata_json
+            ORDER BY p.created_at ASC
+        """, (prompt_key,))
+        rows = cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            result = {
+                "id": row["id"],
+                "prompt_key": row["prompt_key"],
+                "version": row["version"],
+                "template": row["template"],
+                "description": row["description"],
+                "created_at": row["created_at"],
+                "usage_count": row["usage_count"] or 0,
+            }
+            
+            if row["metadata_json"]:
+                try:
+                    result["metadata"] = json.loads(row["metadata_json"])
+                except (json.JSONDecodeError, TypeError):
+                    result["metadata"] = None
+            else:
+                result["metadata"] = None
+            
+            results.append(result)
+        
+        return results
+
+
+def compare_prompt_versions(
+    prompt_key: str,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Compare different versions of a prompt by cost, tokens, and quality.
+    
+    Args:
+        prompt_key: Logical identifier of the prompt
+        db_path: Path to database (uses default if None)
+        
+    Returns:
+        Dictionary with comparison data per version
+    """
+    if db_path is None:
+        db_path = get_db_path()
+    
+    with db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                p.id,
+                p.version,
+                COUNT(e.id) as event_count,
+                SUM(e.tokens_input) as total_tokens_input,
+                SUM(e.tokens_output) as total_tokens_output,
+                SUM(e.tokens_total) as total_tokens,
+                SUM(e.cost_total) as total_cost,
+                AVG(e.cost_total) as avg_cost_per_event,
+                AVG(e.duration_ms) as avg_duration_ms,
+                AVG(e.quality_score) as avg_quality_score,
+                MIN(e.created_at) as first_used,
+                MAX(e.created_at) as last_used
+            FROM prompts p
+            LEFT JOIN events e ON p.id = e.prompt_id AND e.type = 'llm'
+            WHERE p.prompt_key = ?
+            GROUP BY p.id, p.version
+            ORDER BY p.created_at ASC
+        """, (prompt_key,))
+        rows = cursor.fetchall()
+        
+        versions = []
+        for row in rows:
+            version_data = {
+                "prompt_id": row["id"],
+                "version": row["version"],
+                "event_count": row["event_count"] or 0,
+                "total_tokens_input": row["total_tokens_input"] or 0,
+                "total_tokens_output": row["total_tokens_output"] or 0,
+                "total_tokens": row["total_tokens"] or 0,
+                "total_cost": float(row["total_cost"]) if row["total_cost"] else 0.0,
+                "avg_cost_per_event": float(row["avg_cost_per_event"]) if row["avg_cost_per_event"] else 0.0,
+                "avg_duration_ms": float(row["avg_duration_ms"]) if row["avg_duration_ms"] else None,
+                "avg_quality_score": float(row["avg_quality_score"]) if row["avg_quality_score"] else None,
+                "first_used": row["first_used"],
+                "last_used": row["last_used"],
+            }
+            versions.append(version_data)
+        
+        return {
+            "prompt_key": prompt_key,
+            "versions": versions,
+        }
+
+
+def get_prompt_quality_stats(
+    prompt_id: Optional[str] = None,
+    prompt_key: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Get quality statistics for a prompt version or all versions of a prompt key.
+    
+    Args:
+        prompt_id: Specific prompt ID (if provided, prompt_key is ignored)
+        prompt_key: Logical identifier of the prompt (used if prompt_id not provided)
+        db_path: Path to database (uses default if None)
+        
+    Returns:
+        Dictionary with quality statistics
+    """
+    if db_path is None:
+        db_path = get_db_path()
+    
+    with db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        
+        if prompt_id:
+            # Get stats for specific prompt version
+            cursor.execute("""
+                SELECT 
+                    p.id,
+                    p.prompt_key,
+                    p.version,
+                    COUNT(e.id) as event_count,
+                    AVG(e.quality_score) as avg_quality_score,
+                    MIN(e.quality_score) as min_quality_score,
+                    MAX(e.quality_score) as max_quality_score,
+                    COUNT(CASE WHEN e.quality_score >= 0.8 THEN 1 END) as high_quality_count,
+                    COUNT(CASE WHEN e.quality_score < 0.5 THEN 1 END) as low_quality_count
+                FROM prompts p
+                LEFT JOIN events e ON p.id = e.prompt_id AND e.type = 'llm'
+                WHERE p.id = ?
+                GROUP BY p.id, p.prompt_key, p.version
+            """, (prompt_id,))
+        elif prompt_key:
+            # Get stats for all versions of a prompt key
+            cursor.execute("""
+                SELECT 
+                    p.id,
+                    p.prompt_key,
+                    p.version,
+                    COUNT(e.id) as event_count,
+                    AVG(e.quality_score) as avg_quality_score,
+                    MIN(e.quality_score) as min_quality_score,
+                    MAX(e.quality_score) as max_quality_score,
+                    COUNT(CASE WHEN e.quality_score >= 0.8 THEN 1 END) as high_quality_count,
+                    COUNT(CASE WHEN e.quality_score < 0.5 THEN 1 END) as low_quality_count
+                FROM prompts p
+                LEFT JOIN events e ON p.id = e.prompt_id AND e.type = 'llm'
+                WHERE p.prompt_key = ?
+                GROUP BY p.id, p.prompt_key, p.version
+                ORDER BY p.created_at ASC
+            """, (prompt_key,))
+        else:
+            return {"error": "Either prompt_id or prompt_key must be provided"}
+        
+        rows = cursor.fetchall()
+        
+        if prompt_id and len(rows) == 1:
+            # Single version result
+            row = rows[0]
+            return {
+                "prompt_id": row["id"],
+                "prompt_key": row["prompt_key"],
+                "version": row["version"],
+                "event_count": row["event_count"] or 0,
+                "avg_quality_score": float(row["avg_quality_score"]) if row["avg_quality_score"] else None,
+                "min_quality_score": float(row["min_quality_score"]) if row["min_quality_score"] else None,
+                "max_quality_score": float(row["max_quality_score"]) if row["max_quality_score"] else None,
+                "high_quality_count": row["high_quality_count"] or 0,
+                "low_quality_count": row["low_quality_count"] or 0,
+            }
+        else:
+            # Multiple versions result
+            versions = []
+            for row in rows:
+                versions.append({
+                    "prompt_id": row["id"],
+                    "version": row["version"],
+                    "event_count": row["event_count"] or 0,
+                    "avg_quality_score": float(row["avg_quality_score"]) if row["avg_quality_score"] else None,
+                    "min_quality_score": float(row["min_quality_score"]) if row["min_quality_score"] else None,
+                    "max_quality_score": float(row["max_quality_score"]) if row["max_quality_score"] else None,
+                    "high_quality_count": row["high_quality_count"] or 0,
+                    "low_quality_count": row["low_quality_count"] or 0,
+                })
+            
+            return {
+                "prompt_key": prompt_key,
+                "versions": versions,
+            }
+

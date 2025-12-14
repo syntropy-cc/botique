@@ -1,7 +1,7 @@
 """
 CLI argument parsing and command handlers.
 
-Builds argument parser with subcommands (full, ideas, briefs)
+Builds argument parser with subcommands (full, ideas, briefs, prompts)
 and handler functions for each command.
 
 Location: src/cli/commands.py
@@ -18,6 +18,8 @@ from ..core.config import (
     SelectionConfig,
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
+    PROMPTS_DIR,
+    ROOT_DIR,
 )
 from ..core.llm_client import HttpLLMClient
 from ..orchestrator import Orchestrator
@@ -154,6 +156,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=["diverse", "top"],
         default="diverse",
         help="Selection strategy: diverse (variety) or top (highest confidence)",
+    )
+    
+    # Command: prompts
+    p_prompts = subparsers.add_parser(
+        "prompts",
+        help="Register/update prompts from directory in database",
+    )
+    p_prompts.add_argument(
+        "--prompts-dir",
+        type=Path,
+        default=PROMPTS_DIR,
+        help=f"Directory containing .md prompt files (default: {PROMPTS_DIR})",
+    )
+    p_prompts.add_argument(
+        "--update-metadata",
+        action="store_true",
+        help="Update metadata of existing prompts (without creating new versions)",
+    )
+    p_prompts.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Quiet mode (less output)",
     )
     
     return parser
@@ -352,6 +376,70 @@ def handle_briefs_command(args: argparse.Namespace) -> int:
         return 1
 
 
+def handle_prompts_command(args: argparse.Namespace) -> int:
+    """
+    Handle 'prompts' command: Register/update prompts from directory.
+    
+    Args:
+        args: Parsed arguments
+    
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    try:
+        # Import register functions directly
+        # Add scripts directory to path temporarily
+        scripts_dir = ROOT_DIR / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        
+        # Import from the script module
+        import importlib.util
+        script_path = ROOT_DIR / "scripts" / "register_prompts_from_directory.py"
+        
+        if not script_path.exists():
+            raise FileNotFoundError(
+                f"Script not found: {script_path}\n"
+                "Make sure scripts/register_prompts_from_directory.py exists"
+            )
+        
+        spec = importlib.util.spec_from_file_location(
+            "register_prompts_from_directory", script_path
+        )
+        register_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(register_module)
+        
+        # Check if prompts directory exists
+        if not args.prompts_dir.exists():
+            raise FileNotFoundError(
+                f"Prompts directory not found: {args.prompts_dir}\n"
+                f"Please create the directory or specify a different path with --prompts-dir"
+            )
+        
+        # Call register function
+        result = register_module.register_all_prompts(
+            prompts_dir=args.prompts_dir,
+            db_path=None,  # Use default
+            verbose=not args.quiet,
+            update_metadata=args.update_metadata,
+        )
+        
+        if result["total_files"] == 0:
+            print("\n⚠️  No prompt files found")
+            return 1
+        
+        if not args.quiet:
+            print("\n✓ Prompts registration completed successfully")
+        return 0
+    
+    except Exception as exc:
+        print(f"\n✗ Error: {exc}", file=sys.stderr)
+        import traceback
+        if not args.quiet:
+            traceback.print_exc()
+        return 1
+
+
 def main() -> int:
     """
     Main entrypoint for CLI.
@@ -369,6 +457,8 @@ def main() -> int:
         return handle_ideas_command(args)
     elif args.command == "briefs":
         return handle_briefs_command(args)
+    elif args.command == "prompts":
+        return handle_prompts_command(args)
     else:
         parser.print_help()
         return 1
