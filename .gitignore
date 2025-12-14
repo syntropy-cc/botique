@@ -5,3 +5,4 @@ logs/
 .env
 src/__pycache__/
 src/core/__pycache__/
+llm_logs.db

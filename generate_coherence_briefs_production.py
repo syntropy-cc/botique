@@ -15,6 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.core.config import OUTPUT_DIR
+from src.core.llm_logger import LLMLogger
 from src.phases.phase3_coherence import run as run_phase3
 
 # Load environment variables
@@ -26,9 +27,25 @@ def main():
     print("COHERENCE BRIEF GENERATION - PRODUCTION")
     print("=" * 70)
     
+    # Initialize logger with SQL backend
+    logger = LLMLogger(
+        output_dir=OUTPUT_DIR,
+        use_sql=True,
+        use_json=True,  # Keep JSON for compatibility
+    )
+    
     # Paths
     article_slug = "why-tradicional-learning-fails"
     ideas_json_path = OUTPUT_DIR / article_slug / "phase1_ideas.json"
+    
+    # Create trace for this execution
+    trace_id = logger.create_trace(
+        name="generate_coherence_briefs",
+        metadata={"article_slug": article_slug, "script": "generate_coherence_briefs_production"},
+    )
+    logger.set_context(article_slug=article_slug)
+    print(f"✓ Trace created: {trace_id[:8]}...")
+    print(f"✓ SQL logging: enabled")
     
     if not ideas_json_path.exists():
         print(f"❌ ERROR: Ideas file not found: {ideas_json_path}")
@@ -39,10 +56,47 @@ def main():
     
     # Load ideas payload
     print(f"\n1. Loading ideas...")
+    import time
+    load_start = time.time()
+    
     try:
         ideas_payload = json.loads(ideas_json_path.read_text(encoding="utf-8"))
+        
+        # Log step: loading ideas
+        logger.log_step_event(
+            trace_id=trace_id,
+            name="load_ideas_json",
+            input_text=f"Loading ideas from {ideas_json_path.name}",
+            input_obj={
+                "file_path": str(ideas_json_path),
+                "article_slug": article_slug,
+            },
+            output_text=f"Loaded {len(ideas_payload.get('ideas', []))} ideas",
+            output_obj={
+                "ideas_count": len(ideas_payload.get("ideas", [])),
+                "article_summary": article_summary,
+                "total_ideas": len(ideas_payload.get("ideas", [])),
+            },
+            duration_ms=(time.time() - load_start) * 1000,
+            type="preprocess",
+            status="success",
+            metadata={
+                "file_path": str(ideas_json_path),
+                "article_slug": article_slug,
+                "ideas_count": len(ideas_payload.get("ideas", [])),
+                "article_title": article_summary.get("title"),
+            },
+        )
     except Exception as e:
         print(f"❌ ERROR reading JSON file: {e}")
+        logger.log_step_event(
+            trace_id=trace_id,
+            name="load_ideas_json",
+            input_obj={"file_path": str(ideas_json_path)},
+            error=str(e),
+            duration_ms=(time.time() - load_start) * 1000,
+            type="preprocess",
+        )
         return 1
     
     article_summary = ideas_payload.get("article_summary", {})
@@ -95,10 +149,33 @@ def main():
         idea_id = idea.get("id", f"unknown_{idx}")
         print(f"   [{idx}/{len(selected_ideas)}] Processing {idea_id}...", end=" ")
         
+        brief_start = time.time()
+        post_id = f"post_{article_slug}_{idx:03d}"
+        
+        # Log step: start processing brief
+        brief_start_event = logger.log_step_event(
+            trace_id=trace_id,
+            name=f"build_brief_{post_id}",
+            input_text=f"Building coherence brief for idea {idea_id}",
+            input_obj={
+                "idea_id": idea_id,
+                "post_id": post_id,
+                "idea": idea,  # Full idea object
+                "article_summary": article_summary,  # Context
+            },
+            type="preprocess",
+            metadata={
+                "idea_id": idea_id,
+                "post_id": post_id,
+                "platform": idea.get("platform"),
+                "format": idea.get("format"),
+                "tone": idea.get("tone"),
+            },
+        )
+        
         try:
             # Build brief individually
             from src.coherence.builder import CoherenceBriefBuilder
-            post_id = f"post_{article_slug}_{idx:03d}"
             
             brief = CoherenceBriefBuilder.build_from_idea(
                 idea=idea,
@@ -110,14 +187,66 @@ def main():
             CoherenceBriefBuilder.validate_brief(brief)
             
             briefs.append(brief)
+            brief_duration = (time.time() - brief_start) * 1000
+            
+            # Log step: brief built successfully
+            logger.log_step_event(
+                trace_id=trace_id,
+                name=f"build_brief_{post_id}_complete",
+                input_text=f"Completed building brief for {post_id}",
+                output_text=f"Coherence brief generated: {brief.platform}/{brief.format} - {brief.tone}",
+                output_obj={
+                    "post_id": post_id,
+                    "platform": brief.platform,
+                    "format": brief.format,
+                    "tone": brief.tone,
+                    "brief": brief.to_dict(),  # Full brief object
+                },
+                duration_ms=brief_duration,
+                parent_id=brief_start_event,
+                type="postprocess",
+                status="success",
+                metadata={
+                    "post_id": post_id,
+                    "platform": brief.platform,
+                    "format": brief.format,
+                    "tone": brief.tone,
+                    "palette_id": brief.palette_id,
+                    "typography_id": brief.typography_id,
+                    "estimated_slides": brief.estimated_slides,
+                },
+            )
+            
             print(f"✓")
             
         except Exception as e:
-            print(f"❌ ({str(e)[:60]}...)")
+            brief_duration = (time.time() - brief_start) * 1000
+            error_msg = str(e)
+            
+            # Log step: brief failed
+            logger.log_step_event(
+                trace_id=trace_id,
+                name=f"build_brief_{post_id}_failed",
+                input_text=f"Failed building brief for {post_id}",
+                output_text=None,
+                output_obj={"error": error_msg, "idea_id": idea_id},
+                duration_ms=brief_duration,
+                parent_id=brief_start_event,
+                type="postprocess",
+                status="error",
+                error=error_msg,
+                metadata={
+                    "post_id": post_id,
+                    "idea_id": idea_id,
+                    "error": error_msg,
+                },
+            )
+            
+            print(f"❌ ({error_msg[:60]}...)")
             failed_ideas.append({
                 "idea_id": idea_id,
                 "idea": idea,
-                "error": str(e)
+                "error": error_msg
             })
     
     if not briefs:
@@ -340,11 +469,42 @@ def main():
     
     print(f"   Brand values detected: {', '.join(sorted(all_brand_values))}")
     
+    # Verify SQL database
+    print(f"\n9. Verifying SQL database...")
+    try:
+        from src.core.llm_log_queries import get_trace_with_events, get_cost_summary
+        from src.core.llm_log_db import get_db_path
+        
+        db_path = get_db_path()
+        trace_data = get_trace_with_events(trace_id, db_path)
+        
+        if trace_data:
+            event_count = len(trace_data.get("events", []))
+            print(f"   ✓ Trace found in database: {trace_id[:8]}...")
+            print(f"   ✓ Events saved: {event_count}")
+            
+            # Count event types
+            event_types = {}
+            for event in trace_data.get("events", []):
+                event_type = event.get("type", "unknown")
+                event_types[event_type] = event_types.get(event_type, 0) + 1
+            
+            print(f"   ✓ Event breakdown:")
+            for etype, count in event_types.items():
+                print(f"     - {etype}: {count}")
+        else:
+            print(f"   ⚠️  Trace not found in database")
+    except Exception as e:
+        print(f"   ⚠️  Error verifying database: {e}")
+        import traceback
+        traceback.print_exc()
+    
     print("\n" + "=" * 70)
     print("✅ COHERENCE BRIEF GENERATION COMPLETED SUCCESSFULLY!")
     print("=" * 70)
     print(f"\n📄 Consolidated file: {output_path}")
     print(f"📁 Output directory: {output_dir}")
+    print(f"📊 Trace ID: {trace_id}")
     
     if validation_errors or failed_ideas:
         print(f"\n⚠️  WARNINGS:")

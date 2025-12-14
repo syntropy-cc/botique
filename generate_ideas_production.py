@@ -48,11 +48,23 @@ def main():
     print(f"   ✓ Artigo lido: {len(article_text)} caracteres")
     print(f"   ✓ Article slug: {article_slug}")
     
-    # Criar logger
+    # Criar logger with SQL backend
     print(f"\n2. Inicializando logger...")
-    logger = LLMLogger(output_dir=OUTPUT_DIR)
+    logger = LLMLogger(
+        output_dir=OUTPUT_DIR,
+        use_sql=True,  # Enable SQL backend
+        use_json=True,  # Keep JSON for compatibility
+    )
     logger.set_context(article_slug=article_slug)
+    
+    # Create trace for this execution
+    trace_id = logger.create_trace(
+        name="generate_ideas",
+        metadata={"article_slug": article_slug, "article_path": str(article_path)},
+    )
     print(f"   ✓ Logger criado: session_id={logger.get_session_id()[:8]}...")
+    print(f"   ✓ Trace criado: trace_id={trace_id[:8]}...")
+    print(f"   ✓ SQL logging: habilitado")
     
     # Criar diretório de output primeiro
     output_dir = OUTPUT_DIR / article_slug
@@ -178,6 +190,32 @@ def main():
             print(f"   ✓ Total de tokens: {total_tokens:,}")
         if total_cost:
             print(f"   ✓ Custo estimado: ${total_cost:.6f}")
+    
+    # Verify SQL database
+    print(f"\n12. Verificando banco de dados SQL...")
+    try:
+        from src.core.llm_log_queries import get_trace_with_events, get_cost_summary
+        from src.core.llm_log_db import get_db_path
+        
+        db_path = get_db_path()
+        trace_data = get_trace_with_events(trace_id, db_path)
+        
+        if trace_data:
+            event_count = len(trace_data.get("events", []))
+            print(f"   ✓ Trace encontrado no banco: {trace_id[:8]}...")
+            print(f"   ✓ Eventos salvos: {event_count}")
+            
+            # Get cost summary for this trace
+            cost_summary = get_cost_summary(
+                filters={"trace_id": trace_id},
+                db_path=db_path,
+            )
+            if cost_summary["summary"]["total_cost"]:
+                print(f"   ✓ Custo total (do banco): ${cost_summary['summary']['total_cost']:.6f}")
+        else:
+            print(f"   ⚠️  Trace não encontrado no banco")
+    except Exception as e:
+        print(f"   ⚠️  Erro ao verificar banco: {e}")
     
     print("\n" + "=" * 70)
     print("✅ GERAÇÃO CONCLUÍDA COM SUCESSO!")

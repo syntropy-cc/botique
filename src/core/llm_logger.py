@@ -326,6 +326,10 @@ class LLMLogger:
                 metadata={
                     "phase": phase,
                     "function": function,
+                    "base_url": base_url,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "prompt_length": len(prompt),
                     "context": {
                         "article_slug": self.current_article_slug,
                         "post_id": self.current_post_id,
@@ -548,6 +552,21 @@ class LLMLogger:
         Returns:
             Event ID (UUID string)
         """
+        # Extract important fields from input_obj to include in metadata if not already present
+        if metadata is None:
+            metadata = {}
+        
+        # Add important fields from input_obj to metadata if available
+        if input_obj:
+            if "base_url" in input_obj and "base_url" not in metadata:
+                metadata["base_url"] = input_obj["base_url"]
+            if "max_tokens" in input_obj and "max_tokens" not in metadata:
+                metadata["max_tokens"] = input_obj["max_tokens"]
+            if "temperature" in input_obj and "temperature" not in metadata:
+                metadata["temperature"] = input_obj["temperature"]
+            if "prompt_length" in input_obj and "prompt_length" not in metadata:
+                metadata["prompt_length"] = input_obj["prompt_length"]
+        
         return self._write_llm_event_to_sql(
             trace_id=trace_id,
             name=name,
@@ -645,6 +664,8 @@ class LLMLogger:
         parent_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         type: str = "step",
+        error: Optional[str] = None,
+        status: str = "success",
     ) -> str:
         """
         Log a non-LLM workflow step event to SQL database.
@@ -660,6 +681,8 @@ class LLMLogger:
             parent_id: Optional parent event ID (for hierarchical relationships)
             metadata: Optional metadata dictionary
             type: Event type (default: "step", can be "tool", "preprocess", "postprocess", "system")
+            error: Optional error message if the step failed
+            status: Step status (default: "success", can be "error", "timeout", etc.)
             
         Returns:
             Event ID (UUID string)
@@ -670,10 +693,79 @@ class LLMLogger:
         event_id = str(uuid.uuid4())
         now = datetime.utcnow().isoformat() + "Z"
         
+        # Enhance metadata with status and other process-specific information
+        if metadata is None:
+            metadata = {}
+        
+        # Add status to metadata if not already present
+        if "status" not in metadata:
+            metadata["status"] = status
+        
+        # Add process-specific information to metadata
+        if input_obj:
+            # Extract key fields from input_obj to metadata for easier querying
+            if "file_path" in input_obj and "file_path" not in metadata:
+                metadata["file_path"] = input_obj["file_path"]
+            if "idea_id" in input_obj and "idea_id" not in metadata:
+                metadata["idea_id"] = input_obj["idea_id"]
+            if "post_id" in input_obj and "post_id" not in metadata:
+                metadata["post_id"] = input_obj["post_id"]
+        
+        if output_obj:
+            # Extract key fields from output_obj to metadata
+            if "ideas_count" in output_obj and "ideas_count" not in metadata:
+                metadata["ideas_count"] = output_obj["ideas_count"]
+            if "platform" in output_obj and "platform" not in metadata:
+                metadata["platform"] = output_obj["platform"]
+            if "format" in output_obj and "format" not in metadata:
+                metadata["format"] = output_obj["format"]
+        
         # Serialize JSON fields
         input_json = json.dumps(input_obj) if input_obj else None
         output_json = json.dumps(output_obj) if output_obj else None
         metadata_json = json.dumps(metadata) if metadata else None
+        
+        # Ensure we have at least input_text or input_json
+        # If only input_obj is provided, extract a summary for input_text
+        if not input_text and input_obj:
+            # Try to create a readable summary
+            if isinstance(input_obj, dict):
+                if "file_path" in input_obj:
+                    input_text = f"Processing file: {input_obj['file_path']}"
+                elif "idea_id" in input_obj:
+                    input_text = f"Processing idea: {input_obj['idea_id']}"
+                elif "post_id" in input_obj:
+                    input_text = f"Processing post: {input_obj['post_id']}"
+                else:
+                    # Create a summary from first few keys
+                    keys = list(input_obj.keys())[:3]
+                    input_text = f"Processing: {', '.join(keys)}"
+        
+        # For output, ensure we have at least output_text or output_json
+        # Events with status 'success' or 'complete' should have output
+        if status in ["success", "complete"] and not output_text and not output_json:
+            # If we have output_obj, create output_text from it
+            if output_obj:
+                if isinstance(output_obj, dict):
+                    if "ideas_count" in output_obj:
+                        output_text = f"Loaded {output_obj['ideas_count']} ideas"
+                    elif "post_id" in output_obj:
+                        output_text = f"Generated brief for {output_obj['post_id']}"
+                    elif "platform" in output_obj and "format" in output_obj:
+                        output_text = f"Generated {output_obj['platform']}/{output_obj['format']} brief"
+                    else:
+                        # Create a summary from first few keys
+                        keys = list(output_obj.keys())[:3]
+                        output_text = f"Completed: {', '.join(keys)}"
+        
+        # For events with error status, ensure error field is set
+        if status == "error" and not error:
+            error = "Process failed (no error message provided)"
+        
+        # Ensure metadata always has at least basic information
+        if not metadata_json and not metadata:
+            metadata = {"status": status}
+            metadata_json = json.dumps(metadata)
         
         with db_connection(self.db_path) as conn:
             cursor = conn.cursor()
@@ -683,7 +775,7 @@ class LLMLogger:
                  input_text, input_json, output_text, output_json, error, duration_ms,
                  tokens_input, tokens_output, tokens_total,
                  cost_input, cost_output, cost_total, metadata_json)
-                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, NULL, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?)
             """, (
                 event_id,
                 trace_id,
@@ -695,6 +787,7 @@ class LLMLogger:
                 input_json,
                 output_text,
                 output_json,
+                error,
                 int(round(duration_ms)) if duration_ms is not None else None,
                 metadata_json,
             ))
