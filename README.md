@@ -6,7 +6,7 @@ Sistema multi-agente para gestão de marca pessoal e geração de conteúdo para
 
 - **Pipeline completo**: Geração de ideias e briefs de coerência a partir de artigos
 - **Versionamento de prompts**: Sistema automático de versionamento com prevenção de duplicatas
-- **Logging de LLM**: Rastreamento completo de chamadas LLM com métricas de custo e performance
+- **Event Logging**: Database-based logging system tracking all workflow events (LLM calls and non-LLM steps) with cost metrics, performance, and quality tracking
 - **CLI integrado**: Interface de linha de comando para todas as operações
 
 ## Instalação
@@ -106,8 +106,11 @@ python -m src.cli.commands briefs \
 # Chave da API LLM (obrigatória)
 export LLM_API_KEY="sua-chave-aqui"
 
-# Caminho customizado para banco de dados (opcional)
+# Caminho customizado para banco de dados SQLite (opcional)
 export LLM_LOGS_DB_PATH="/caminho/para/llm_logs.db"
+
+# Para usar PostgreSQL ao invés de SQLite (opcional)
+export DB_URL="postgresql://user:password@localhost/dbname"
 ```
 
 ## Estrutura do Projeto
@@ -147,6 +150,7 @@ python -m src.cli.commands prompts --update-metadata
 ## Documentação
 
 - [Comandos CLI](./docs/cli_commands.md) - Guia completo de comandos
+- [Event Logging](./docs/event_logging.md) - Sistema de logging de eventos
 - [Versionamento de Prompts](./docs/prompt_versioning_automatic.md) - Sistema de versionamento
 - [Arquitetura do Pipeline](./docs/pipeline_architecture.md) - Visão geral do sistema
 

@@ -171,7 +171,19 @@ O comando `prompts` integra-se automaticamente com o sistema de versionamento:
 ## Variáveis de Ambiente
 
 - `LLM_API_KEY`: Chave da API LLM (obrigatória)
-- `LLM_LOGS_DB_PATH`: Caminho customizado para banco de dados (opcional)
+- `LLM_LOGS_DB_PATH`: Caminho customizado para banco de dados SQLite (opcional, padrão: `llm_logs.db` na raiz)
+- `DB_URL`: URL de conexão PostgreSQL (opcional, se definido, usa PostgreSQL ao invés de SQLite)
+
+## Sistema de Logging
+
+Todos os comandos do pipeline utilizam o mesmo sistema de logging baseado em banco de dados:
+
+- **Banco padrão**: SQLite (`llm_logs.db` na raiz do projeto)
+- **Customização**: Use `LLM_LOGS_DB_PATH` para especificar um caminho customizado
+- **PostgreSQL**: Defina `DB_URL` para usar PostgreSQL ao invés de SQLite
+- **Eventos registrados**: Todos os eventos do workflow (chamadas LLM e passos não-LLM) são armazenados no banco
+
+Para mais informações, consulte [Event Logging](./event_logging.md).
 
 ## Exemplos Completos
 

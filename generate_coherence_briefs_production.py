@@ -28,11 +28,7 @@ def main():
     print("=" * 70)
     
     # Initialize logger with SQL backend
-    logger = LLMLogger(
-        output_dir=OUTPUT_DIR,
-        use_sql=True,
-        use_json=True,  # Keep JSON for compatibility
-    )
+    logger = LLMLogger(use_sql=True)
     
     # Paths
     article_slug = "why-tradicional-learning-fails"

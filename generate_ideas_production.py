@@ -50,11 +50,7 @@ def main():
     
     # Criar logger with SQL backend
     print(f"\n2. Inicializando logger...")
-    logger = LLMLogger(
-        output_dir=OUTPUT_DIR,
-        use_sql=True,  # Enable SQL backend
-        use_json=True,  # Keep JSON for compatibility
-    )
+    logger = LLMLogger(use_sql=True)
     logger.set_context(article_slug=article_slug)
     
     # Create trace for this execution
@@ -152,15 +148,6 @@ def main():
         encoding="utf-8",
     )
     print(f"   ✓ JSON salvo: {output_path}")
-    
-    # Salvar logs
-    print(f"\n9. Salvando logs...")
-    log_paths = logger.save_logs(article_slug=article_slug)
-    
-    if log_paths.get('local'):
-        print(f"   ✓ Log local: {log_paths['local']}")
-    if log_paths.get('central'):
-        print(f"   ✓ Log centralizado: {log_paths['central']}")
     
     # Resumo das ideias
     print(f"\n10. Resumo das ideias geradas:")

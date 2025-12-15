@@ -43,7 +43,7 @@ def test_prompt_versioning():
     print("✅ Banco de dados inicializado\n")
     
     # Create logger
-    logger = LLMLogger(db_path=db_path, use_json=False)
+    logger = LLMLogger(db_path=db_path)
     trace_id = logger.create_trace(name="test_prompt_versioning")
     print(f"📝 Trace criado: {trace_id}\n")
     

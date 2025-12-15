@@ -91,6 +91,9 @@ logger.log_llm_event(
     # ... outros parâmetros
 )
 
+# Eventos são armazenados na tabela `events` do banco de dados,
+# ligados à versão do prompt via `prompt_id`
+
 # Mais tarde, se o template mudar...
 prompt_id_v2, version_v2 = register_prompt(
     prompt_key="summarize",

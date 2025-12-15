@@ -38,11 +38,7 @@ def main() -> int:
 
     # Initialize logger with SQL backend only
     print("\n1. Initializing logger...")
-    logger = LLMLogger(
-        output_dir=OUTPUT_DIR,
-        use_sql=True,
-        use_json=False,  # SQL-only logging
-    )
+    logger = LLMLogger(use_sql=True)
 
     # Create trace for this execution (automatically sets logger.current_trace_id)
     trace_id = logger.create_trace(

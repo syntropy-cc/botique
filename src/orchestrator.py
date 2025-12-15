@@ -52,7 +52,7 @@ class Orchestrator:
         """
         # Initialize logger first
         if logger is None:
-            logger = LLMLogger(output_dir=output_dir or OUTPUT_DIR)
+            logger = LLMLogger()
         
         self.logger = logger
         
@@ -232,11 +232,6 @@ class Orchestrator:
         
         print(f"Output: {phase1_result['output_path']}")
         
-        # Save logs after phase 1
-        log_paths = self.logger.save_logs(article_slug=article_slug)
-        if log_paths:
-            print(f"LLM logs saved: {log_paths.get('local', 'N/A')}")
-        
         # Phase 2: Selection
         print("\n" + "="*70)
         print("PHASE 2: SELECTION")
@@ -308,9 +303,6 @@ class Orchestrator:
         
         print(f"Generated {phase3_result['briefs_count']} coherence briefs")
         print(f"Output: {phase3_result['output_path']}")
-        
-        # Save final logs
-        final_log_paths = self.logger.save_logs(article_slug=article_slug)
         
         # Summary
         print("\n" + "="*70)

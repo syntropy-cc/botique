@@ -1,15 +1,13 @@
 """
-LLM Logger module
+Event Logger module
 
-Logging system for tracking LLM API calls with inputs, outputs, and metrics.
-Supports both SQL database (primary) and JSON file (legacy) backends.
+Logging system for tracking all workflow events (LLM calls and non-LLM workflow steps)
+with inputs, outputs, and metrics. All events are stored in a database (SQLite or PostgreSQL).
 
 Location: src/core/llm_logger.py
 """
 
 import json
-import os
-import time
 import traceback
 import uuid
 from datetime import datetime
@@ -22,16 +20,15 @@ from .llm_pricing import calculate_cost
 
 class LLMLogger:
     """
-    Logger for LLM API calls.
+    Logger for all workflow events (LLM calls and non-LLM workflow steps).
     
-    Captures all LLM calls with:
-    - Input prompts and parameters
-    - Output responses
-    - Performance metrics (tokens, duration, costs)
-    - Context (phase, function, article)
-    - Error information
+    Captures:
+    - LLM events: Input prompts, output responses, performance metrics (tokens, duration, costs)
+    - Non-LLM workflow events: Process steps, preprocessing, postprocessing, tool calls, system events
+    - Context: Phase, function, article, post, slide information
+    - Error information and status
     
-    Logs are saved in JSON format for easy analysis and auditing.
+    All events are stored in a database (SQLite by default, PostgreSQL via DB_URL).
     """
     
     # Cost estimates per 1K tokens (input/output) by model
@@ -45,38 +42,27 @@ class LLMLogger:
     
     def __init__(
         self,
-        output_dir: Optional[Path] = None,
-        central_logs_dir: Optional[Path] = None,
         enabled: bool = True,
         db_path: Optional[Path] = None,
         use_sql: bool = True,
-        use_json: bool = True,
     ):
         """
-        Initialize LLM logger.
+        Initialize event logger.
         
         Args:
-            output_dir: Base output directory (defaults to OUTPUT_DIR)
-            central_logs_dir: Centralized logs directory (optional)
             enabled: Whether logging is enabled (default: True)
             db_path: Path to SQL database (uses default if None)
             use_sql: Whether to write to SQL database (default: True)
-            use_json: Whether to write to JSON files (default: True, for compatibility)
         """
-        from .config import OUTPUT_DIR
-        
         self.enabled = enabled
-        self.output_dir = output_dir or OUTPUT_DIR
-        self.central_logs_dir = central_logs_dir or self._get_central_logs_dir()
         self.db_path = db_path or get_db_path()
         self.use_sql = use_sql
-        self.use_json = use_json
         
         # Initialize database if using SQL
         if self.use_sql:
             init_database(self.db_path)
         
-        # Session tracking (for JSON compatibility and trace_id)
+        # Session tracking (for trace_id and in-memory debugging)
         self.session_id = str(uuid.uuid4())
         self.pipeline_start = datetime.utcnow().isoformat() + "Z"
         self.calls: List[Dict[str, Any]] = []
@@ -88,16 +74,6 @@ class LLMLogger:
         self.current_article_slug: Optional[str] = None
         self.current_post_id: Optional[str] = None
         self.current_slide_number: Optional[int] = None
-    
-    def _get_central_logs_dir(self) -> Optional[Path]:
-        """Get central logs directory from env var or default location"""
-        env_dir = os.getenv("LLM_LOGS_DIR")
-        if env_dir:
-            return Path(env_dir)
-        
-        # Default to logs/llm_calls/ in project root
-        root_dir = Path(__file__).resolve().parents[2]
-        return root_dir / "logs" / "llm_calls"
     
     def set_context(
         self,
@@ -299,7 +275,7 @@ class LLMLogger:
         
         self.calls.append(log_entry)
         
-        # Also write to SQL if enabled
+        # Write to SQL database
         if self.use_sql:
             self._write_llm_event_to_sql(
                 trace_id=self.current_trace_id or self.session_id,
@@ -344,115 +320,6 @@ class LLMLogger:
     def get_session_id(self) -> str:
         """Get current session ID"""
         return self.session_id
-    
-    def get_logs_path(self, article_slug: Optional[str] = None) -> Path:
-        """
-        Get path for log file.
-        
-        Args:
-            article_slug: Article slug for local logs (uses current if None)
-        
-        Returns:
-            Path to log file
-        """
-        article_slug = article_slug or self.current_article_slug or "unknown"
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        
-        log_dir = self.output_dir / article_slug / "llm_logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        
-        return log_dir / f"session_{timestamp}_{self.session_id[:8]}.json"
-    
-    def get_central_logs_path(self, article_slug: Optional[str] = None) -> Optional[Path]:
-        """
-        Get path for centralized log file.
-        
-        Args:
-            article_slug: Article slug (uses current if None)
-        
-        Returns:
-            Path to centralized log file, or None if central logging disabled
-        """
-        if not self.central_logs_dir:
-            return None
-        
-        article_slug = article_slug or self.current_article_slug or "unknown"
-        now = datetime.utcnow()
-        timestamp = now.strftime("%Y%m%d_%H%M%S")
-        
-        # Create date-based directory structure
-        log_dir = (
-            self.central_logs_dir
-            / str(now.year)
-            / f"{now.month:02d}"
-            / f"{now.day:02d}"
-        )
-        log_dir.mkdir(parents=True, exist_ok=True)
-        
-        return log_dir / f"{article_slug}_{self.session_id[:8]}_{timestamp}.json"
-    
-    def save_logs(self, article_slug: Optional[str] = None) -> Dict[str, str]:
-        """
-        Save all logged calls to file(s).
-        
-        Saves to both local and central locations if configured.
-        
-        Args:
-            article_slug: Article slug (uses current if None)
-        
-        Returns:
-            Dict with paths to saved log files
-        """
-        if not self.enabled or not self.calls:
-            return {}
-        
-        article_slug = article_slug or self.current_article_slug or "unknown"
-        pipeline_end = datetime.utcnow().isoformat() + "Z"
-        
-        # Calculate totals
-        total_tokens = sum(
-            call["metrics"]["tokens_total"]
-            for call in self.calls
-            if call["metrics"]["tokens_total"] is not None
-        )
-        total_cost = sum(
-            call["metrics"]["cost_estimate"]
-            for call in self.calls
-            if call["metrics"]["cost_estimate"] is not None
-        )
-        
-        # Build log document
-        log_document = {
-            "session_id": self.session_id,
-            "article_slug": article_slug,
-            "pipeline_start": self.pipeline_start,
-            "pipeline_end": pipeline_end,
-            "total_calls": len(self.calls),
-            "total_tokens": total_tokens if total_tokens > 0 else None,
-            "total_cost_estimate": round(total_cost, 6) if total_cost > 0 else None,
-            "calls": self.calls,
-        }
-        
-        saved_paths = {}
-        
-        # Save local log
-        local_path = self.get_logs_path(article_slug)
-        local_path.write_text(
-            json.dumps(log_document, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        saved_paths["local"] = str(local_path)
-        
-        # Save central log if configured
-        central_path = self.get_central_logs_path(article_slug)
-        if central_path:
-            central_path.write_text(
-                json.dumps(log_document, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            saved_paths["central"] = str(central_path)
-        
-        return saved_paths
     
     def reset_session(self):
         """Reset session for new pipeline run"""

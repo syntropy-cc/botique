@@ -5,14 +5,11 @@ Script de teste para o sistema de log LLM.
 Faz uma chamada real ao LLM e verifica se os logs são criados corretamente.
 """
 
-import json
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
 from src.core.llm_client import HttpLLMClient
 from src.core.llm_logger import LLMLogger
-from src.core.config import OUTPUT_DIR
 
 # Carregar variáveis de ambiente do .env
 load_dotenv()
@@ -30,15 +27,14 @@ def main():
     
     print(f"✓ API Key encontrada: {api_key[:10]}...")
     
-    # Criar diretório de teste
-    test_output_dir = OUTPUT_DIR / "test_logs"
-    test_output_dir.mkdir(parents=True, exist_ok=True)
-    
     # Criar logger
     print("\n1. Criando logger...")
-    logger = LLMLogger(output_dir=test_output_dir)
+    logger = LLMLogger()
     logger.set_context(article_slug="test_article", post_id="test_post_001")
+    trace_id = logger.create_trace(name="test_llm_logging")
+    logger.current_trace_id = trace_id
     print(f"   ✓ Logger criado: session_id={logger.get_session_id()[:8]}...")
+    print(f"   ✓ Trace criado: {trace_id[:8]}...")
     
     # Criar cliente LLM com logger
     print("\n2. Criando cliente LLM...")
@@ -81,25 +77,17 @@ def main():
         if call['metrics']['cost_estimate']:
             print(f"   ✓ Custo estimado: ${call['metrics']['cost_estimate']:.6f}")
     
-    # Salvar logs
-    print("\n5. Salvando logs...")
-    log_paths = logger.save_logs(article_slug="test_article")
+    # Verify logs in database
+    print("\n5. Verificando logs no banco de dados...")
+    from src.core.llm_log_db import db_connection, get_db_path
     
-    if log_paths.get('local'):
-        local_path = Path(log_paths['local'])
-        print(f"   ✓ Log local salvo: {local_path}")
-        
-        # Verificar estrutura do arquivo
-        log_data = json.loads(local_path.read_text())
-        print(f"   ✓ Estrutura válida:")
-        print(f"     - Session ID: {log_data['session_id'][:8]}...")
-        print(f"     - Total de chamadas: {log_data['total_calls']}")
-        print(f"     - Total de tokens: {log_data.get('total_tokens', 'N/A')}")
-        print(f"     - Custo total: ${log_data.get('total_cost_estimate', 0):.6f}")
-    
-    if log_paths.get('central'):
-        central_path = Path(log_paths['central'])
-        print(f"   ✓ Log centralizado salvo: {central_path}")
+    db_path = get_db_path()
+    with db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as count FROM events WHERE trace_id = ?", (logger.current_trace_id or logger.session_id,))
+        row = cursor.fetchone()
+        event_count = row['count'] if hasattr(row, 'keys') else row[0]
+        print(f"   ✓ Eventos no banco: {event_count}")
     
     # Mostrar conteúdo do log (primeira chamada)
     print("\n6. Conteúdo do log (primeira chamada):")
@@ -112,9 +100,7 @@ def main():
     print("\n" + "=" * 70)
     print("✅ TESTE CONCLUÍDO COM SUCESSO!")
     print("=" * 70)
-    
-    if log_paths.get('local'):
-        print(f"\n📄 Log completo disponível em: {log_paths['local']}")
+    print(f"\n📄 Logs disponíveis no banco de dados: {db_path}")
     
     return 0
 

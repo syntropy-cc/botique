@@ -44,7 +44,6 @@ class TestLLMLoggingSQL(unittest.TestCase):
         self.logger = LLMLogger(
             db_path=self.db_path_obj,
             use_sql=True,
-            use_json=False,  # Disable JSON for tests
         )
     
     def tearDown(self):

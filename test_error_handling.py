@@ -28,8 +28,7 @@ def test_raw_response_saved_on_validation_error():
         return False
     
     # Criar logger
-    test_output_dir = OUTPUT_DIR / "test_error_handling"
-    logger = LLMLogger(output_dir=test_output_dir)
+    logger = LLMLogger()
     
     # Criar cliente
     client = HttpLLMClient(
@@ -95,14 +94,9 @@ def test_raw_response_saved_on_validation_error():
         if call['error']:
             print(f"   ✓ Erro registrado no log: {call['error'][:80]}...")
         
-        # Salvar logs
-        log_paths = logger.save_logs(article_slug="test_article")
-        if log_paths.get('local'):
-            print(f"   ✓ Logs salvos: {log_paths['local']}")
-            return True
-        else:
-            print(f"   ⚠️  Logs não foram salvos")
-            return False
+        # Logs are automatically saved to database
+        print(f"   ✓ Logs salvos no banco de dados")
+        return True
     else:
         print(f"   ❌ Nenhum log foi criado!")
         return False

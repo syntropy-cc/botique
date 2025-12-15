@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-Migration script for converting filesystem-based JSON logs to SQL database.
+Legacy migration script for converting old filesystem-based JSON logs to SQL database.
 
-Traverses existing log directories and imports all logs into the SQL database.
+This script imports old JSON log files into the database. The current system no longer
+writes log files to directories - all events are stored directly in the database.
+
+Traverses existing log directories (output/**/llm_logs/*.json and logs/llm_calls/**/*.json)
+and imports all logs into the SQL database.
 
 Location: scripts/migrate_logs_from_filesystem.py
 """
@@ -325,8 +329,11 @@ def main():
     dry_run = args.dry_run
     
     print("=" * 70)
-    print("MIGRATE LOGS FROM FILESYSTEM TO SQL")
+    print("MIGRATE LOGS FROM FILESYSTEM TO SQL (LEGACY)")
     print("=" * 70)
+    print("NOTE: This script imports old JSON log files. The current system")
+    print("      no longer writes log files - all events are stored in the database.")
+    print()
     print(f"Root directory: {root_dir}")
     print(f"Database path: {db_path}")
     print(f"Dry run: {dry_run}")
@@ -346,6 +353,7 @@ def main():
     
     if not log_files:
         print("No log files found. Nothing to migrate.")
+        print("(This is expected if you're using the new database-only logging system.)")
         return 0
     
     # Migrate each file
