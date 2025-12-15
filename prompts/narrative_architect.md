@@ -57,12 +57,7 @@ KEY INSIGHTS TO USE: {key_insights_used}
 IDs of insights to distribute across slides (e.g., insight_1, insight_2)
 
 KEY INSIGHTS CONTENT:
-For each insight ID, you have:
-- ID: {insight_id}
-- Content: {insight_content}
-- Type: {insight_type}
-- Strength: {insight_strength} (1-10 scale)
-- Source Quote: {source_quote}
+{key_insights_content_block}
 
 
 ### EMOTIONAL JOURNEY
