@@ -54,11 +54,20 @@ class IdeaGenerator:
         # Build prompt using to_prompt_dict() to get all template variables
         prompt_dict = config.to_prompt_dict()
         prompt_dict["article"] = article_text
+        
+        # Read template for prompt registration
+        template_text = POST_IDEATOR_TEMPLATE.read_text(encoding="utf-8")
         prompt = build_prompt_from_template(POST_IDEATOR_TEMPLATE, prompt_dict)
         
         # Call LLM - raw response will be automatically saved by HttpLLMClient.generate()
         # if save_raw_responses is enabled (default: True)
-        raw_response = self.llm.generate(prompt, context=context)
+        # Pass prompt_key and template for automatic prompt_id registration
+        raw_response = self.llm.generate(
+            prompt,
+            context=context,
+            prompt_key="post_ideator",
+            template=template_text,
+        )
         
         # Parse and validate response according to post_ideator.md template structure
         payload = validate_llm_json_response(

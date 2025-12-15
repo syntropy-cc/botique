@@ -86,6 +86,9 @@ class HttpLLMClient:
         temperature: float = 0.2,
         context: Optional[str] = None,
         save_raw: Optional[bool] = None,
+        prompt_key: Optional[str] = None,
+        template: Optional[str] = None,
+        prompt_id: Optional[str] = None,
     ) -> str:
         """
         Generate completion from prompt.
@@ -94,12 +97,19 @@ class HttpLLMClient:
         Automatically logs the call if logger is configured.
         Optionally saves raw response to file for debugging.
         
+        If prompt_key and template are provided, automatically registers/retrieves
+        the prompt_id for version tracking. If prompt_id is provided directly,
+        it will be used instead.
+        
         Args:
-            prompt: The full prompt text
+            prompt: The full prompt text (after variable substitution)
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0.0-2.0)
             context: Optional context identifier (e.g., article_slug) for organizing saved responses
             save_raw: Whether to save raw response (overrides instance default if provided)
+            prompt_key: Optional prompt key identifier (e.g., "post_ideator")
+            template: Optional raw template text (before variable substitution)
+            prompt_id: Optional prompt ID (if provided, prompt_key and template are ignored)
         
         Returns:
             Assistant's response text
@@ -107,6 +117,20 @@ class HttpLLMClient:
         Raises:
             RuntimeError: If API request fails or response format is invalid
         """
+        # Resolve prompt_id if prompt_key and template are provided
+        resolved_prompt_id = prompt_id
+        if not resolved_prompt_id and prompt_key and template:
+            try:
+                from .prompt_helpers import get_or_register_prompt
+                resolved_prompt_id, _ = get_or_register_prompt(
+                    prompt_key=prompt_key,
+                    template=template,
+                )
+            except Exception as e:
+                # Don't fail the call if prompt registration fails
+                # Just log a warning (could be logged to logger if available)
+                pass
+        
         # Start timing
         start_time = time.time()
         status = "success"
@@ -223,6 +247,7 @@ class HttpLLMClient:
                     tokens_total=tokens_total,
                     status=status,
                     error=error_msg,
+                    prompt_id=resolved_prompt_id,
                 )
         
         return content
