@@ -6,11 +6,8 @@ Generates detailed slide-by-slide narrative structures from coherence briefs.
 Location: src/narrative/architect.py
 """
 
-import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from typing import TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from ..coherence.brief import CoherenceBrief
 from ..core.config import NARRATIVE_ARCHITECT_TEMPLATE, MAX_SLIDES_PER_POST, MIN_SLIDES_PER_POST
@@ -81,49 +78,6 @@ class NarrativeArchitect:
         self.llm = llm_client
         self.logger = logger
     
-    def _log_step(
-        self,
-        step: str,
-        message: str,
-        data: Optional[Dict[str, Any]] = None,
-        post_id: Optional[str] = None,
-    ) -> None:
-        """
-        Log an application-level step.
-        
-        Args:
-            step: Step identifier (e.g., "start", "build_prompt")
-            message: Human-readable message
-            data: Optional additional data to log
-            post_id: Optional post ID for correlation
-        """
-        if not self.logger:
-            return
-        
-        # Write step log as JSON line to debug directory
-        # This is a simple approach; could be extended to use a structured logger
-        try:
-            from ..core.config import OUTPUT_DIR
-            
-            context = post_id or "narrative_architect"
-            debug_dir = OUTPUT_DIR / context / "debug"
-            debug_dir.mkdir(parents=True, exist_ok=True)
-            
-            log_file = debug_dir / "narrative_architect_steps.jsonl"
-            
-            log_entry = {
-                "step": step,
-                "message": message,
-                "post_id": post_id,
-                "data": data or {},
-            }
-            
-            with log_file.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
-        except Exception:
-            # Don't fail the main operation if logging fails
-            pass
-    
     def generate_structure(
         self,
         brief: CoherenceBrief,
@@ -144,46 +98,14 @@ class NarrativeArchitect:
         """
         context = context or brief.post_id
         
-        # Log start
-        self._log_step(
-            "start",
-            f"Starting narrative structure generation for post {brief.post_id}",
-            {"idea_id": brief.idea_id, "platform": brief.platform, "format": brief.format},
-            post_id=brief.post_id,
-        )
-        
         # Build prompt dictionary from brief fields
         prompt_dict = self._build_prompt_dict(brief)
-        
-        # Log prompt build
-        self._log_step(
-            "build_prompt",
-            "Prompt built successfully",
-            {
-                "num_insights": len(brief.key_insights_content),
-                "insights_used": len(brief.key_insights_used),
-                "estimated_slides": brief.estimated_slides,
-            },
-            post_id=brief.post_id,
-        )
         
         # Read template and build prompt
         template_text = NARRATIVE_ARCHITECT_TEMPLATE.read_text(encoding="utf-8")
         prompt = build_prompt_from_template(NARRATIVE_ARCHITECT_TEMPLATE, prompt_dict)
         
-        # Log LLM call initiation
-        self._log_step(
-            "llm_call",
-            "Initiating LLM call",
-            {
-                "prompt_key": "narrative_architect",
-                "temperature": 0.2,
-                "max_tokens": 2048,
-            },
-            post_id=brief.post_id,
-        )
-        
-        # Call LLM
+        # Call LLM (logging is handled automatically by HttpLLMClient if logger is provided)
         raw_response = self.llm.generate(
             prompt,
             context=context,
@@ -193,40 +115,35 @@ class NarrativeArchitect:
             template=template_text,
         )
         
-        # Log response received
-        self._log_step(
-            "llm_response",
-            "LLM response received",
-            {
-                "response_length": len(raw_response),
-                "status": "success",
-            },
-            post_id=brief.post_id,
-        )
-        
         # Validate response structure
         try:
             payload = self._validate_response(raw_response, brief)
         except ValueError as e:
-            self._log_step(
-                "validation_error",
-                f"Validation failed: {str(e)}",
-                {"error": str(e)},
-                post_id=brief.post_id,
-            )
+            # Log validation error using SQL logger if available
+            if self.logger:
+                try:
+                    # Get trace_id from context if available
+                    trace_id = getattr(self.logger, 'current_trace_id', None) or getattr(self.logger, 'session_id', None)
+                    if trace_id:
+                        self.logger.log_step_event(
+                            trace_id=trace_id,
+                            name=f"narrative_architect_validation_error_{brief.post_id}",
+                            input_text=f"Validating narrative structure for {brief.post_id}",
+                            output_text=None,
+                            error=str(e),
+                            status="error",
+                            type="postprocess",
+                            metadata={
+                                "post_id": brief.post_id,
+                                "idea_id": brief.idea_id,
+                                "platform": brief.platform,
+                                "format": brief.format,
+                            },
+                        )
+                except Exception:
+                    # Don't fail the main operation if logging fails
+                    pass
             raise
-        
-        # Log validation success
-        self._log_step(
-            "validation_success",
-            "Response validated successfully",
-            {
-                "num_slides": len(payload["slides"]),
-                "pacing": payload["narrative_pacing"],
-                "transition_style": payload["transition_style"],
-            },
-            post_id=brief.post_id,
-        )
         
         # Build normalized narrative structure
         # Map "narrative_pacing" from payload to "pacing" for brief enrichment
@@ -240,18 +157,39 @@ class NarrativeArchitect:
         # Enrich coherence brief
         brief.enrich_from_narrative_structure(narrative_structure)
         
-        # Log brief enrichment
-        self._log_step(
-            "brief_enriched",
-            "Coherence brief enriched with narrative structure",
-            {
-                "num_slides": len(payload["slides"]),
-                "pacing": payload["narrative_pacing"],
-                "transition_style": payload["transition_style"],
-                "insights_referenced": self._count_insights_referenced(payload["slides"]),
-            },
-            post_id=brief.post_id,
-        )
+        # Log success using SQL logger if available
+        if self.logger:
+            try:
+                # Get trace_id from context if available
+                trace_id = getattr(self.logger, 'current_trace_id', None) or getattr(self.logger, 'session_id', None)
+                if trace_id:
+                    self.logger.log_step_event(
+                        trace_id=trace_id,
+                        name=f"narrative_architect_success_{brief.post_id}",
+                        input_text=f"Generating narrative structure for {brief.post_id}",
+                        output_text=f"Narrative structure generated: {len(payload['slides'])} slides, {payload['narrative_pacing']} pacing",
+                        output_obj={
+                            "post_id": brief.post_id,
+                            "num_slides": len(payload["slides"]),
+                            "pacing": payload["narrative_pacing"],
+                            "transition_style": payload["transition_style"],
+                            "insights_referenced": self._count_insights_referenced(payload["slides"]),
+                        },
+                        status="success",
+                        type="postprocess",
+                        metadata={
+                            "post_id": brief.post_id,
+                            "idea_id": brief.idea_id,
+                            "platform": brief.platform,
+                            "format": brief.format,
+                            "num_slides": len(payload["slides"]),
+                            "pacing": payload["narrative_pacing"],
+                            "transition_style": payload["transition_style"],
+                        },
+                    )
+            except Exception:
+                # Don't fail the main operation if logging fails
+                pass
         
         # Return full payload (including rationale)
         return payload
