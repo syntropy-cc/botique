@@ -172,12 +172,13 @@ class NarrativeArchitect:
             raise
         
         # Build normalized narrative structure
-        # Map "narrative_pacing" from payload to "pacing" for brief enrichment
+        # Include all fields from payload for brief enrichment
         narrative_structure = {
             "pacing": payload["narrative_pacing"],
             "transition_style": payload["transition_style"],
             "arc_refined": payload["arc_refined"],
             "slides": payload["slides"],
+            "rationale": payload["rationale"],
         }
         
         # Enrich coherence brief

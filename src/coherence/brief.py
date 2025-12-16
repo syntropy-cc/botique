@@ -125,6 +125,8 @@ class CoherenceBrief:
     narrative_structure: Optional[Dict[str, Any]] = None  # Detailed slide-by-slide structure
     narrative_pacing: Optional[str] = None  # "fast", "moderate", "deliberate"
     transition_style: Optional[str] = None  # "abrupt", "smooth", "dramatic"
+    arc_refined: Optional[str] = None  # Refined narrative arc from Narrative Architect
+    narrative_rationale: Optional[Dict[str, Any]] = None  # LLM's rationale object (pacing_choice, transition_choice, emotional_arc, structural_decisions)
     
     # Phase 4: Copywriter
     copy_guidelines: Optional[Dict[str, Any]] = None  # Writing patterns and guidelines
@@ -210,6 +212,8 @@ class CoherenceBrief:
                 "narrative_structure": self.narrative_structure,
                 "narrative_pacing": self.narrative_pacing,
                 "transition_style": self.transition_style,
+                "arc_refined": self.arc_refined,
+                "narrative_rationale": self.narrative_rationale,
                 "copy_guidelines": self.copy_guidelines,
                 "cta_guidelines": self.cta_guidelines,
                 "visual_preferences": self.visual_preferences,
@@ -352,12 +356,17 @@ CONSTRAINTS:
         """
         Enrich brief with detailed narrative structure from Narrative Architect.
         
+        Includes all fields from the Narrative Architect JSON response:
+        - pacing, transition_style, arc_refined, slides, rationale
+        
         Args:
             narrative_structure: Complete narrative structure with slides, pacing, etc.
         """
         self.narrative_structure = narrative_structure
         self.narrative_pacing = narrative_structure.get("pacing", "moderate")
         self.transition_style = narrative_structure.get("transition_style", "smooth")
+        self.arc_refined = narrative_structure.get("arc_refined")
+        self.narrative_rationale = narrative_structure.get("rationale")
     
     def enrich_from_copywriting(
         self,
@@ -461,11 +470,12 @@ CONSTRAINTS:
         """
         narrative_info = ""
         if self.narrative_structure:
+            arc_info = f"- Arc Refined: {self.arc_refined}\n" if self.arc_refined else ""
             narrative_info = f"""
 NARRATIVE STRUCTURE:
 - Pacing: {self.narrative_pacing or 'N/A'}
 - Transition Style: {self.transition_style or 'N/A'}
-- Slides: {len(self.narrative_structure.get('slides', []))} slides defined
+{arc_info}- Slides: {len(self.narrative_structure.get('slides', []))} slides defined
 """
         
         return f"""
@@ -511,11 +521,12 @@ CONSTRAINTS:
         """
         narrative_info = ""
         if self.narrative_structure:
+            arc_info = f"- Arc Refined: {self.arc_refined}\n" if self.arc_refined else ""
             narrative_info = f"""
 NARRATIVE STRUCTURE:
 - Pacing: {self.narrative_pacing or 'N/A'}
 - Transition Style: {self.transition_style or 'N/A'}
-"""
+{arc_info}"""
         
         return f"""
 === COHERENCE BRIEF (Visual Composer) ===
