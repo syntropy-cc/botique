@@ -109,6 +109,8 @@ class CoherenceBrief:
     article_context: str            # Article summary for this post
     key_insights_used: List[str]    # Insight IDs used
     key_insights_content: List[Dict[str, Any]] = field(default_factory=list)  # Full insight content
+    idea_explanation: Optional[str] = None  # Detailed brainstorm from idea generator
+    rationale: Optional[str] = None  # Rationale from idea generator (1-2 sentences)
     
     # =========================================================================
     # BRAND ALIGNMENT
@@ -203,6 +205,8 @@ class CoherenceBrief:
                 "article_context": self.article_context,
                 "key_insights_used": self.key_insights_used,
                 "key_insights_content": self.key_insights_content,
+                "idea_explanation": self.idea_explanation,
+                "rationale": self.rationale,
             },
             "brand": {
                 "values": self.brand_values,
@@ -377,9 +381,15 @@ CONSTRAINTS:
         
         Args:
             copy_guidelines: Writing patterns, CTA details, etc.
+                Expected structure: {
+                    "headline_style": str | None,
+                    "body_style": str | None,
+                    "cta_details": dict | {}
+                }
         """
         self.copy_guidelines = copy_guidelines
-        self.cta_guidelines = copy_guidelines.get("cta_details", {})
+        cta_details = copy_guidelines.get("cta_details", {})
+        self.cta_guidelines = cta_details if cta_details else None
     
     def enrich_from_visual_composition(
         self,

@@ -198,6 +198,8 @@ class CoherenceBriefBuilder:
             article_context=idea.get("article_context_for_idea", ""),
             key_insights_used=idea.get("key_insights_used", []),
             key_insights_content=key_insights_content,
+            idea_explanation=idea.get("idea_explanation"),
+            rationale=idea.get("rationale"),
             
             # Brand
             brand_values=brand_values,
