@@ -275,3 +275,121 @@ def list_prompt_versions(
         
         return results
 
+
+def get_latest_prompt(
+    prompt_key: str,
+    db_path: Optional[Path] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Get the latest version of a prompt by key.
+    
+    Retrieves the most recently created version of a prompt (highest version number
+    or most recent timestamp).
+    
+    Args:
+        prompt_key: Logical identifier of the prompt
+        db_path: Path to SQLite database (uses default if None)
+        
+    Returns:
+        Dictionary with prompt data (id, prompt_key, version, template, etc.),
+        or None if no prompt found for the key
+        
+    Example:
+        prompt = get_latest_prompt("post_ideator")
+        if prompt:
+            template = prompt["template"]
+    """
+    if db_path is None:
+        db_path = get_db_path()
+    
+    with db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, prompt_key, version, template, description, 
+                   created_at, metadata_json
+            FROM prompts 
+            WHERE prompt_key = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (prompt_key,))
+        row = cursor.fetchone()
+        
+        if not row:
+            return None
+        
+        result = {
+            "id": row["id"],
+            "prompt_key": row["prompt_key"],
+            "version": row["version"],
+            "template": row["template"],
+            "description": row["description"],
+            "created_at": row["created_at"],
+        }
+        
+        if row["metadata_json"]:
+            try:
+                result["metadata"] = json.loads(row["metadata_json"])
+            except json.JSONDecodeError:
+                result["metadata"] = None
+        else:
+            result["metadata"] = None
+        
+        return result
+
+
+def get_prompt_by_key_and_version(
+    prompt_key: str,
+    version: str,
+    db_path: Optional[Path] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Get a specific version of a prompt by key and version.
+    
+    Args:
+        prompt_key: Logical identifier of the prompt
+        version: Version string (e.g., "v1", "v2", "v3")
+        db_path: Path to SQLite database (uses default if None)
+        
+    Returns:
+        Dictionary with prompt data, or None if not found
+        
+    Example:
+        prompt = get_prompt_by_key_and_version("post_ideator", "v2")
+        if prompt:
+            template = prompt["template"]
+    """
+    if db_path is None:
+        db_path = get_db_path()
+    
+    with db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, prompt_key, version, template, description, 
+                   created_at, metadata_json
+            FROM prompts 
+            WHERE prompt_key = ? AND version = ?
+        """, (prompt_key, version))
+        row = cursor.fetchone()
+        
+        if not row:
+            return None
+        
+        result = {
+            "id": row["id"],
+            "prompt_key": row["prompt_key"],
+            "version": row["version"],
+            "template": row["template"],
+            "description": row["description"],
+            "created_at": row["created_at"],
+        }
+        
+        if row["metadata_json"]:
+            try:
+                result["metadata"] = json.loads(row["metadata_json"])
+            except json.JSONDecodeError:
+                result["metadata"] = None
+        else:
+            result["metadata"] = None
+        
+        return result
+

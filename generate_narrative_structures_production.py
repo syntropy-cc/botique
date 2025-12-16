@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from src.core.config import OUTPUT_DIR
 from src.core.llm_client import HttpLLMClient
 from src.core.llm_logger import LLMLogger
+from src.core.prompt_registry import get_latest_prompt
 from src.coherence.builder import CoherenceBriefBuilder
 from src.narrative.architect import NarrativeArchitect
 
@@ -169,13 +170,27 @@ def main() -> int:
     print(f"   ✓ LLM client created: model={llm_client.model}, timeout={llm_client.timeout}s")
     print(f"   ✓ Raw responses directory: {debug_dir}")
 
+    # Verify prompt is registered in database
+    print("\n5. Verifying prompt in database...")
+    prompt_key = "narrative_architect"
+    prompt_data = get_latest_prompt(prompt_key)
+    if not prompt_data:
+        print(f"   ❌ ERROR: Prompt '{prompt_key}' not found in database!")
+        print(f"   📝 Please register the prompt first using:")
+        print(f"      python -m src.cli.commands prompts register prompts/narrative_architect.md")
+        print(f"   or use the prompt registration script.")
+        return 1
+    
+    prompt_version = prompt_data.get("version", "N/A")
+    print(f"   ✓ Prompt found: {prompt_key} (version {prompt_version})")
+    
     # Create Narrative Architect
-    print("\n5. Creating Narrative Architect agent...")
+    print("\n6. Creating Narrative Architect agent...")
     architect = NarrativeArchitect(llm_client=llm_client, logger=logger)
     print("   ✓ Narrative Architect created")
 
     # Build briefs and generate narrative structures
-    print("\n6. Building coherence briefs and generating narrative structures...")
+    print("\n7. Building coherence briefs and generating narrative structures...")
     briefs = []
     failed_items = []
 
@@ -318,7 +333,7 @@ def main() -> int:
         print(f"   ⚠️  {len(failed_items)} idea(s) failed (continuing with successful ones)")
 
     # Save consolidated enriched briefs
-    print("\n7. Saving consolidated coherence briefs with narrative...")
+    print("\n8. Saving consolidated coherence briefs with narrative...")
     briefs_dict = [brief.to_dict() for brief in briefs]
     consolidated_path = article_output_dir / "coherence_briefs_with_narrative.json"
     consolidated_path.write_text(
@@ -329,7 +344,7 @@ def main() -> int:
     print(f"   ✓ Consolidated file: {consolidated_path}")
 
     # Quick validation: check narrative evolution fields
-    print("\n8. Validating narrative evolution fields...")
+    print("\n9. Validating narrative evolution fields...")
     for idx, brief in enumerate(briefs, 1):
         has_narrative = brief.narrative_structure is not None
         print(
@@ -338,7 +353,7 @@ def main() -> int:
         )
 
     # Verify SQL logs for this trace
-    print("\n9. Verifying SQL database for narrative trace...")
+    print("\n10. Verifying SQL database for narrative trace...")
     try:
         from src.core.llm_log_queries import get_trace_with_events
         from src.core.llm_log_db import get_db_path

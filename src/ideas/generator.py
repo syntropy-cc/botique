@@ -9,8 +9,9 @@ Location: src/ideas/generator.py
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ..core.config import IdeationConfig, POST_IDEATOR_TEMPLATE
+from ..core.config import IdeationConfig
 from ..core.llm_client import HttpLLMClient
+from ..core.prompt_registry import get_latest_prompt, get_prompt_by_key_and_version
 from ..core.utils import build_prompt_from_template, validate_llm_json_response
 
 
@@ -36,6 +37,7 @@ class IdeaGenerator:
         article_text: str,
         config: IdeationConfig,
         context: Optional[str] = None,
+        prompt_version: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate post ideas from article text.
@@ -44,20 +46,44 @@ class IdeaGenerator:
             article_text: Full article content
             config: Ideation configuration
             context: Optional context identifier (e.g., article_slug) for organizing saved responses
+            prompt_version: Optional prompt version to use (e.g., "v1", "v2"). 
+                          If None, uses the latest version from database.
         
         Returns:
             Dict with "article_summary" and "ideas" keys
         
         Raises:
-            ValueError: If response structure is invalid
+            ValueError: If response structure is invalid or prompt not found in database
         """
+        # Load prompt template from database
+        prompt_key = "post_ideator"
+        if prompt_version:
+            prompt_data = get_prompt_by_key_and_version(prompt_key, prompt_version)
+            if not prompt_data:
+                raise ValueError(
+                    f"Prompt '{prompt_key}' version '{prompt_version}' not found in database. "
+                    f"Use a valid version or register the prompt first."
+                )
+        else:
+            prompt_data = get_latest_prompt(prompt_key)
+            if not prompt_data:
+                raise ValueError(
+                    f"Prompt '{prompt_key}' not found in database. "
+                    f"Please register the prompt in the database first."
+                )
+        
+        template_text = prompt_data["template"]
+        
         # Build prompt using to_prompt_dict() to get all template variables
         prompt_dict = config.to_prompt_dict()
         prompt_dict["article"] = article_text
         
-        # Read template for prompt registration
-        template_text = POST_IDEATOR_TEMPLATE.read_text(encoding="utf-8")
-        prompt = build_prompt_from_template(POST_IDEATOR_TEMPLATE, prompt_dict)
+        # Build prompt from template string using simple replacement
+        # (same method as render_template but for string instead of file)
+        prompt = template_text
+        for key, value in prompt_dict.items():
+            placeholder = "{" + key + "}"
+            prompt = prompt.replace(placeholder, str(value))
         
         # Call LLM - raw response will be automatically saved by HttpLLMClient.generate()
         # if save_raw_responses is enabled (default: True)
@@ -65,7 +91,7 @@ class IdeaGenerator:
         raw_response = self.llm.generate(
             prompt,
             context=context,
-            prompt_key="post_ideator",
+            prompt_key=prompt_key,
             template=template_text,
         )
         

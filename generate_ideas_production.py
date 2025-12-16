@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from src.core.config import IdeationConfig, OUTPUT_DIR
 from src.core.llm_client import HttpLLMClient
 from src.core.llm_logger import LLMLogger
+from src.core.prompt_registry import get_latest_prompt
 from src.ideas.generator import IdeaGenerator
 
 # Carregar variáveis de ambiente
@@ -82,13 +83,27 @@ def main():
     print(f"   ✓ Cliente LLM criado: model={llm_client.model}, timeout={llm_client.timeout}s")
     print(f"   ✓ Salvamento automático de respostas brutas: habilitado")
     
+    # Verificar se o prompt está registrado no banco de dados
+    print(f"\n4. Verificando prompt no banco de dados...")
+    prompt_key = "post_ideator"
+    prompt_data = get_latest_prompt(prompt_key)
+    if not prompt_data:
+        print(f"   ❌ ERRO: Prompt '{prompt_key}' não encontrado no banco de dados!")
+        print(f"   📝 Por favor, registre o prompt primeiro usando:")
+        print(f"      python -m src.cli.commands prompts register prompts/post_ideator.md")
+        print(f"   ou use o script de registro de prompts.")
+        return 1
+    
+    prompt_version = prompt_data.get("version", "N/A")
+    print(f"   ✓ Prompt encontrado: {prompt_key} (versão {prompt_version})")
+    
     # Criar gerador de ideias
-    print(f"\n4. Criando gerador de ideias...")
+    print(f"\n5. Criando gerador de ideias...")
     generator = IdeaGenerator(llm_client)
     print(f"   ✓ Gerador criado")
     
     # Configurar ideation
-    print(f"\n5. Configurando parâmetros de ideação...")
+    print(f"\n6. Configurando parâmetros de ideação...")
     config = IdeationConfig(
         num_ideas_min=5,
         num_ideas_max=8,
@@ -100,7 +115,7 @@ def main():
     print(f"     - Insights: {config.num_insights_min}-{config.num_insights_max}")
     
     # Gerar ideias (resposta bruta será salva automaticamente pelo HttpLLMClient)
-    print(f"\n6. Gerando ideias (chamada real ao LLM)...")
+    print(f"\n7. Gerando ideias (chamada real ao LLM)...")
     print(f"   ⏳ Isso pode levar alguns segundos...")
     print(f"   📝 A resposta bruta será salva automaticamente em: {debug_dir}")
     
@@ -135,14 +150,14 @@ def main():
     ideas = payload.get("ideas", [])
     article_summary = payload.get("article_summary", {})
     
-    print(f"\n7. Resultados:")
+    print(f"\n8. Resultados:")
     print(f"   ✓ Total de ideias geradas: {len(ideas)}")
     print(f"   ✓ Insights identificados: {len(article_summary.get('key_insights', []))}")
     print(f"   ✓ Título do artigo: {article_summary.get('title', 'N/A')}")
     
     # Salvar JSON
     output_path = output_dir / "phase1_ideas.json"
-    print(f"\n8. Salvando resultados...")
+    print(f"\n9. Salvando resultados...")
     output_path.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -208,8 +223,7 @@ def main():
     print("✅ GERAÇÃO CONCLUÍDA COM SUCESSO!")
     print("=" * 70)
     print(f"\n📄 Arquivo de ideias: {output_path}")
-    if log_paths.get('local'):
-        print(f"📊 Logs disponíveis em: {log_paths['local']}")
+    print(f"📊 Trace ID: {trace_id}")
     
     return 0
 
