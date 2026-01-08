@@ -139,7 +139,7 @@ class Copywriter:
             prompt,
             context=context,
             temperature=0.3,
-            max_tokens=2048,
+            max_tokens=8000,
             prompt_key=prompt_key,
             template=template_text,
         )
@@ -410,15 +410,91 @@ class Copywriter:
                 if not isinstance(start_idx, int) or not isinstance(end_idx, int):
                     raise ValueError(f"{element_name}.emphasis[{idx}].start_index and .end_index must be integers")
                 
-                if start_idx < 0 or end_idx <= start_idx or end_idx > len(content):
-                    raise ValueError(
-                        f"{element_name}.emphasis[{idx}] invalid indices: "
-                        f"start_index={start_idx}, end_index={end_idx}, content_length={len(content)}"
-                    )
+                # Auto-correct indices that are slightly out of bounds
+                # This handles cases where the LLM miscalculates indices due to Unicode or other issues
+                content_len = len(content)
+                original_start_idx = start_idx
+                original_end_idx = end_idx
+                actual_text = emph.get("text", "")
                 
-                # Validate emphasis text matches content substring
+                # First, check if indices are valid and text matches
+                indices_valid = (0 <= start_idx < end_idx <= content_len)
+                text_matches = False
+                if indices_valid:
+                    expected_text = content[start_idx:end_idx]
+                    text_matches = (actual_text == expected_text)
+                
+                # If indices are invalid or text doesn't match, try to auto-correct
+                if not indices_valid or not text_matches:
+                    if actual_text:
+                        # Try to find the text in the content
+                        # First, try near the original start_idx (within 10 characters)
+                        found_pos = -1
+                        search_start = max(0, start_idx - 10)
+                        search_end = min(content_len, start_idx + 50)
+                        candidate = content[search_start:search_end]
+                        pos_in_candidate = candidate.find(actual_text)
+                        if pos_in_candidate != -1:
+                            found_pos = search_start + pos_in_candidate
+                        
+                        # If not found nearby, search the entire content
+                        if found_pos == -1:
+                            found_pos = content.find(actual_text)
+                        
+                        if found_pos != -1:
+                            # Found the text - use these indices
+                            start_idx = found_pos
+                            end_idx = found_pos + len(actual_text)
+                            # Update the emphasis dict with corrected indices
+                            emph["start_index"] = start_idx
+                            emph["end_index"] = end_idx
+                        else:
+                            # Text not found - check if it's a small index error
+                            if end_idx > content_len and end_idx <= content_len + 5:
+                                # Small overrun - try clamping end_idx and checking if text matches
+                                clamped_end = content_len
+                                if start_idx < clamped_end:
+                                    expected_text = content[start_idx:clamped_end]
+                                    # Check if actual_text is a prefix of expected_text
+                                    if actual_text and expected_text.startswith(actual_text):
+                                        # Text matches as prefix - use clamped end
+                                        end_idx = start_idx + len(actual_text)
+                                        emph["start_index"] = start_idx
+                                        emph["end_index"] = end_idx
+                                    else:
+                                        raise ValueError(
+                                            f"{element_name}.emphasis[{idx}] invalid indices: "
+                                            f"start_index={original_start_idx}, end_index={original_end_idx}, "
+                                            f"content_length={content_len}, and text '{actual_text}' not found in content"
+                                        )
+                                else:
+                                    raise ValueError(
+                                        f"{element_name}.emphasis[{idx}] invalid indices: "
+                                        f"start_index={original_start_idx}, end_index={original_end_idx}, "
+                                        f"content_length={content_len}"
+                                    )
+                            else:
+                                raise ValueError(
+                                    f"{element_name}.emphasis[{idx}] invalid indices: "
+                                    f"start_index={original_start_idx}, end_index={original_end_idx}, "
+                                    f"content_length={content_len}, and text '{actual_text}' not found in content"
+                                )
+                    else:
+                        # No text provided - can't auto-correct
+                        if end_idx > content_len:
+                            raise ValueError(
+                                f"{element_name}.emphasis[{idx}] invalid indices: "
+                                f"start_index={start_idx}, end_index={original_end_idx}, content_length={content_len}"
+                            )
+                        elif end_idx <= start_idx:
+                            raise ValueError(
+                                f"{element_name}.emphasis[{idx}] invalid indices: "
+                                f"start_index={original_start_idx}, end_index={original_end_idx}, "
+                                f"content_length={content_len}"
+                            )
+                
+                # Final validation: ensure text matches content substring
                 expected_text = content[start_idx:end_idx]
-                actual_text = emph.get("text")
                 if actual_text != expected_text:
                     raise ValueError(
                         f"{element_name}.emphasis[{idx}].text ('{actual_text}') doesn't match "

@@ -21,14 +21,199 @@ from dotenv import load_dotenv
 from src.core.config import IdeationConfig, OUTPUT_DIR
 from src.core.llm_client import HttpLLMClient
 from src.core.llm_logger import LLMLogger
+from src.core.llm_log_queries import get_trace_with_events
+from src.core.llm_log_db import get_db_path
 from src.core.prompt_registry import get_latest_prompt
 from src.coherence.builder import CoherenceBriefBuilder
+from src.coherence.brief import CoherenceBrief
 from src.ideas.generator import IdeaGenerator
 from src.narrative.architect import NarrativeArchitect
 from src.copywriting.writer import Copywriter
 
 
+def test_validation_from_db(trace_id: str) -> int:
+    """
+    Test validation fix by loading events from database and replaying validation.
+    
+    Args:
+        trace_id: Trace ID to load from database
+        
+    Returns:
+        Exit code (0 for success, 1 for failure)
+    """
+    print("=" * 70)
+    print("TESTING VALIDATION FIX FROM DATABASE")
+    print("=" * 70)
+    
+    # Load trace from database
+    print(f"\n1. Loading trace {trace_id[:8]}...")
+    db_path = get_db_path()
+    trace_data = get_trace_with_events(trace_id, db_path)
+    
+    if not trace_data:
+        print(f"❌ ERROR: Trace not found in database")
+        return 1
+    
+    events = trace_data.get("events", [])
+    print(f"   ✓ Found {len(events)} events")
+    
+    # Find copywriter LLM events with output
+    copywriter_events = [
+        e for e in events 
+        if e.get("type") == "llm" 
+        and "copywriter" in e.get("name", "").lower()
+        and e.get("output_json")
+    ]
+    
+    print(f"   ✓ Found {len(copywriter_events)} copywriter LLM events with output")
+    
+    if not copywriter_events:
+        print("   ⚠️  No copywriter events with output found")
+        return 1
+    
+    # Get metadata to find article and post info
+    metadata = trace_data.get("metadata", {})
+    article_slug = metadata.get("article_slug", "why-tradicional-learning-fails")
+    
+    # Load article
+    article_path = Path(os.getenv("ARTICLE_PATH", f"articles/{article_slug}.md"))
+    if not article_path.exists():
+        print(f"   ⚠️  Article not found: {article_path}, skipping article text")
+        article_text = ""
+    else:
+        article_text = article_path.read_text(encoding="utf-8")
+        print(f"   ✓ Article loaded: {len(article_text)} characters")
+    
+    # Initialize logger and copywriter (for validation only)
+    logger = LLMLogger(use_sql=False)
+    llm_client = HttpLLMClient(
+        api_key="dummy",
+        base_url="https://api.deepseek.com/v1",
+        model="deepseek-chat",
+        logger=logger,
+    )
+    copywriter = Copywriter(llm_client=llm_client, logger=logger)
+    
+    # Try to load briefs and narrative structures
+    article_output_dir = OUTPUT_DIR / article_slug
+    post_dirs = [d for d in article_output_dir.iterdir() if d.is_dir() and d.name.startswith("post_")]
+    
+    if not post_dirs:
+        print(f"   ⚠️  No post directories found in {article_output_dir}")
+        print(f"   Testing validation with minimal context...")
+        
+        # Test with minimal context
+        success_count = 0
+        error_count = 0
+        
+        for event in copywriter_events:
+            output_json = event.get("output_json", {})
+            if not output_json:
+                continue
+            
+            # Create minimal slide_info and brief for validation
+            slide_number = output_json.get("slide_number", 1)
+            slide_info = {
+                "slide_number": slide_number,
+                "module_type": "unknown",
+                "content_slots": {},
+            }
+            
+            # Create minimal brief
+            brief_dict = {
+                "post_id": f"post_{article_slug}_001",
+                "platform": "linkedin",
+                "format": "carousel",
+                "tone": "professional",
+                "canvas": {"width": 1080, "height": 1350, "aspect_ratio": "4:5"},
+            }
+            brief = CoherenceBrief.from_dict(brief_dict)
+            
+            try:
+                result = copywriter._validate_response(
+                    raw_response=json.dumps(output_json),
+                    slide_info=slide_info,
+                    brief=brief,
+                )
+                success_count += 1
+                print(f"   ✓ Event {event.get('name', 'unknown')}: Validation passed")
+            except ValueError as e:
+                error_count += 1
+                error_msg = str(e)
+                print(f"   ❌ Event {event.get('name', 'unknown')}: {error_msg[:80]}...")
+        
+        print(f"\n   Results: {success_count} passed, {error_count} failed")
+        return 0 if error_count == 0 else 1
+    
+    # Test with full context from files
+    print(f"\n2. Testing validation with full context from {len(post_dirs)} post(s)...")
+    
+    success_count = 0
+    error_count = 0
+    
+    for post_dir in post_dirs:
+        brief_path = post_dir / "coherence_brief.json"
+        narrative_path = post_dir / "narrative_structure.json"
+        
+        if not brief_path.exists() or not narrative_path.exists():
+            continue
+        
+        brief_dict = json.loads(brief_path.read_text(encoding="utf-8"))
+        brief = CoherenceBrief.from_dict(brief_dict)
+        
+        narrative_data = json.loads(narrative_path.read_text(encoding="utf-8"))
+        slides = narrative_data.get("slides", [])
+        
+        # Match events to slides by slide_number
+        for slide_info in slides:
+            slide_number = slide_info.get("slide_number")
+            
+            # Find matching event
+            matching_event = None
+            for event in copywriter_events:
+                event_output = event.get("output_json", {})
+                if event_output.get("slide_number") == slide_number:
+                    matching_event = event
+                    break
+            
+            if not matching_event:
+                continue
+            
+            output_json = matching_event.get("output_json", {})
+            
+            try:
+                result = copywriter._validate_response(
+                    raw_response=json.dumps(output_json),
+                    slide_info=slide_info,
+                    brief=brief,
+                )
+                success_count += 1
+                print(f"   ✓ {brief.post_id} slide {slide_number}: Validation passed")
+            except ValueError as e:
+                error_count += 1
+                error_msg = str(e)
+                print(f"   ❌ {brief.post_id} slide {slide_number}: {error_msg[:80]}...")
+    
+    print(f"\n   Results: {success_count} passed, {error_count} failed")
+    
+    if error_count == 0:
+        print("\n" + "=" * 70)
+        print("✅ VALIDATION TEST PASSED!")
+        print("=" * 70)
+        return 0
+    else:
+        print("\n" + "=" * 70)
+        print(f"⚠️  VALIDATION TEST COMPLETED WITH {error_count} ERROR(S)")
+        print("=" * 70)
+        return 1
+
+
 def main() -> int:
+    # Check if we should test from database instead
+    test_trace_id = os.getenv("TEST_TRACE_ID")
+    if test_trace_id:
+        return test_validation_from_db(test_trace_id)
+    
     print("=" * 70)
     print("FULL PIPELINE TEST - IDEATION -> NARRATIVE -> COPYWRITING")
     print("=" * 70)

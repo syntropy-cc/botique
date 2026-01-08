@@ -136,7 +136,7 @@ class NarrativeArchitect:
             prompt,
             context=context,
             temperature=0.2,
-            max_tokens=2048,
+            max_tokens=8048,
             prompt_key=prompt_key,
             template=template_text,
         )
@@ -309,38 +309,43 @@ class NarrativeArchitect:
                     "module_type",
                     "purpose",
                     "target_emotions",
-                    "content_slots",
-                    "visual_mood",
+                    "copy_direction",
+                    "visual_direction",
+                    "key_elements",
                     "insights_referenced",
                     "transition_to_next",
                 ],
             },
         )
         
-        # Validate content_slots structure for each slide
+        # Validate copy_direction and visual_direction are non-empty strings
         for idx, slide in enumerate(payload["slides"]):
-            if "content_slots" not in slide:
-                raise ValueError(f"Slide {idx + 1} missing 'content_slots'")
+            copy_direction = slide.get("copy_direction", "")
+            visual_direction = slide.get("visual_direction", "")
             
-            content_slots = slide["content_slots"]
-            if not isinstance(content_slots, dict):
-                raise ValueError(f"Slide {idx + 1}: 'content_slots' must be a dictionary")
+            if not copy_direction or not isinstance(copy_direction, str):
+                raise ValueError(
+                    f"Slide {idx + 1}: 'copy_direction' must be a non-empty string"
+                )
             
-            # Validate each slot type
-            for slot_name in ["headline", "subheadline", "body", "cta"]:
-                if slot_name in content_slots:
-                    slot = content_slots[slot_name]
-                    if not isinstance(slot, dict):
-                        raise ValueError(
-                            f"Slide {idx + 1}: 'content_slots.{slot_name}' must be a dictionary"
-                        )
-                    
-                    required_keys = ["required", "max_chars"]
-                    missing = [k for k in required_keys if k not in slot]
-                    if missing:
-                        raise ValueError(
-                            f"Slide {idx + 1}: 'content_slots.{slot_name}' missing keys: {missing}"
-                        )
+            if not visual_direction or not isinstance(visual_direction, str):
+                raise ValueError(
+                    f"Slide {idx + 1}: 'visual_direction' must be a non-empty string"
+                )
+            
+            # Validate minimum length (50-300 words as specified in prompt)
+            copy_words = len(copy_direction.split())
+            visual_words = len(visual_direction.split())
+            
+            if copy_words < 50:
+                raise ValueError(
+                    f"Slide {idx + 1}: 'copy_direction' must be at least 50 words (got {copy_words})"
+                )
+            
+            if visual_words < 50:
+                raise ValueError(
+                    f"Slide {idx + 1}: 'visual_direction' must be at least 50 words (got {visual_words})"
+                )
         
         # Semantic validation
         self._validate_semantics(payload, brief)

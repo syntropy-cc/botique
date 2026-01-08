@@ -82,7 +82,7 @@ class HttpLLMClient:
     def generate(
         self,
         prompt: str,
-        max_tokens: int = 2048,
+        max_tokens: int = 8048,
         temperature: float = 0.2,
         context: Optional[str] = None,
         save_raw: Optional[bool] = None,
