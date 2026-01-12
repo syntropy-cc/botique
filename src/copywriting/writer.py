@@ -9,13 +9,23 @@ Location: src/copywriting/writer.py
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from ..coherence.brief import CoherenceBrief
-from ..core.llm_client import HttpLLMClient
-from ..core.prompt_registry import get_latest_prompt, get_prompt_by_key_and_version
 from ..core.utils import validate_llm_json_response
+# Try new locations first, fallback to old locations
+try:
+    from boutique.state_management.models.coherence_brief import CoherenceBrief
+    from framework.llm.http_client import HttpLLMClient
+    from framework.llm.prompt_helpers import get_or_register_prompt as get_latest_prompt
+    from framework.llm.prompt_helpers import get_prompt_by_key_and_version
+except ImportError:
+    from ..coherence.brief import CoherenceBrief
+    from ..core.llm_client import HttpLLMClient
+    from ..core.prompt_registry import get_latest_prompt, get_prompt_by_key_and_version
 
 if TYPE_CHECKING:
-    from ..core.llm_logger import LLMLogger
+    try:
+        from framework.llm.logger import LLMLogger
+    except ImportError:
+        from ..core.llm_logger import LLMLogger
 
 
 def _build_slide_insights_block(brief: CoherenceBrief, slide_info: Dict[str, Any]) -> str:

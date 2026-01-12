@@ -14,8 +14,13 @@ from typing import Any, Dict, List
 from ..core.config import IdeationConfig, OUTPUT_DIR
 from ..ideas.generator import IdeaGenerator
 from ..ideas.filter import IdeaFilter
-from ..coherence.builder import CoherenceBriefBuilder
-from ..coherence.brief import CoherenceBrief
+# Try new location first, fallback to old location
+try:
+    from boutique.state_management.models.coherence_brief import CoherenceBrief
+    from boutique.state_management.models.coherence_brief import CoherenceBriefBuilder
+except ImportError:
+    from ..coherence.builder import CoherenceBriefBuilder
+    from ..coherence.brief import CoherenceBrief
 
 
 def run(

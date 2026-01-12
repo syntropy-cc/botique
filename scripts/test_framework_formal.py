@@ -20,20 +20,38 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
-from src.core.universal_state import UniversalState
-from src.core.memory_strategies import (
-    EpisodicStrategy,
-    HierarchicalStrategy,
-    create_strategy,
-)
-from src.core.agent import (
-    create_ideation_agent,
-    create_selection_agent,
-    create_coherence_agent,
-)
-from src.core.orchestrator_formal import FormalOrchestrator
-from src.core.llm_client import HttpLLMClient
-from src.core.llm_logger import LLMLogger
+# Try new locations first, fallback to old locations
+try:
+    from framework.core.universal_state import UniversalState
+    from framework.core.state_management import (
+        EpisodicStrategy,
+        HierarchicalStrategy,
+        create_strategy,
+    )
+    from framework.core.agent import (
+        create_ideation_agent,
+        create_selection_agent,
+        create_coherence_agent,
+    )
+    from framework.core.orchestrator import Orchestrator as FormalOrchestrator
+    from framework.llm.http_client import HttpLLMClient
+    from framework.llm.logger import LLMLogger
+except ImportError:
+    from src.core.universal_state import UniversalState
+    from src.core.memory_strategies import (
+        EpisodicStrategy,
+        HierarchicalStrategy,
+        create_strategy,
+    )
+    from src.core.agent import (
+        create_ideation_agent,
+        create_selection_agent,
+        create_coherence_agent,
+    )
+    from src.core.orchestrator_formal import FormalOrchestrator
+    from src.core.llm_client import HttpLLMClient
+    from src.core.llm_logger import LLMLogger
+
 from src.core.config import IdeationConfig, SelectionConfig, OUTPUT_DIR
 from src.phases import run_phase1, run_phase2, run_phase3
 

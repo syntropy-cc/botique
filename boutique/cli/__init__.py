@@ -1,0 +1,3 @@
+"""
+CLI específico do boutique.
+"""

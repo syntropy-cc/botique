@@ -27,23 +27,45 @@ from dotenv import load_dotenv
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
-from src.core.universal_state import UniversalState
-from src.core.memory_strategies import (
-    EpisodicStrategy,
-    HierarchicalStrategy,
-    create_strategy,
-)
-from src.core.agent import (
-    create_ideation_agent,
-    create_selection_agent,
-    create_coherence_agent,
-)
-from src.core.orchestrator_formal import FormalOrchestrator
-from src.core.llm_client import HttpLLMClient
-from src.core.llm_logger import LLMLogger
+# Try new locations first, fallback to old locations
+try:
+    from framework.core.universal_state import UniversalState
+    from framework.core.state_management import (
+        EpisodicStrategy,
+        HierarchicalStrategy,
+        create_strategy,
+    )
+    from framework.core.agent import (
+        create_ideation_agent,
+        create_selection_agent,
+        create_coherence_agent,
+    )
+    from framework.core.orchestrator import Orchestrator as FormalOrchestrator
+    from framework.llm.http_client import HttpLLMClient
+    from framework.llm.logger import LLMLogger
+except ImportError:
+    from src.core.universal_state import UniversalState
+    from src.core.memory_strategies import (
+        EpisodicStrategy,
+        HierarchicalStrategy,
+        create_strategy,
+    )
+    from src.core.agent import (
+        create_ideation_agent,
+        create_selection_agent,
+        create_coherence_agent,
+    )
+    from src.core.orchestrator_formal import FormalOrchestrator
+    from src.core.llm_client import HttpLLMClient
+    from src.core.llm_logger import LLMLogger
+
 from src.core.config import IdeationConfig, SelectionConfig, OUTPUT_DIR
 from src.phases import run_phase1, run_phase2, run_phase3
-from src.core.prompt_registry import get_latest_prompt
+# Try new location first, fallback to old location
+try:
+    from framework.llm.prompt_helpers import get_or_register_prompt as get_latest_prompt
+except ImportError:
+    from src.core.prompt_registry import get_latest_prompt
 
 
 def test_formal_pipeline_with_article(article_path: Path) -> int:
@@ -101,8 +123,13 @@ def test_formal_pipeline_with_article(article_path: Path) -> int:
     print("2.1. Verificando estado inicial do banco de dados...")
     initial_trace_count = 0
     try:
-        from src.core.llm_log_queries import list_traces
-        from src.core.llm_log_db import get_db_path
+        # Try new location first, fallback to old location
+        try:
+            from framework.llm.queries import list_traces
+            from framework.llm.logger import get_db_path
+        except ImportError:
+            from src.core.llm_log_queries import list_traces
+            from src.core.llm_log_db import get_db_path
         
         db_path = get_db_path()
         initial_traces = list_traces(limit=1000, db_path=db_path)
@@ -465,8 +492,13 @@ def test_formal_pipeline_with_article(article_path: Path) -> int:
     print()
     
     try:
-        from src.core.llm_log_queries import get_trace_with_events, list_traces
-        from src.core.llm_log_db import get_db_path
+        # Try new location first, fallback to old location
+        try:
+            from framework.llm.queries import get_trace_with_events, list_traces
+            from framework.llm.logger import get_db_path
+        except ImportError:
+            from src.core.llm_log_queries import get_trace_with_events, list_traces
+            from src.core.llm_log_db import get_db_path
         
         db_path = get_db_path()
         print(f"   📊 Banco de dados: {db_path}")

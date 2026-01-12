@@ -5,11 +5,15 @@ Thin coordinator that initializes LLM client and phase handlers,
 then orchestrates the execution of phases in sequence.
 
 Location: src/orchestrator.py
+
+NOTE: This is a compatibility wrapper around BoutiqueOrchestrator.
+The actual implementation is in boutique/orchestrator/boutique_orchestrator.py
 """
 
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from boutique.orchestrator.boutique_orchestrator import BoutiqueOrchestrator
 from .core.config import (
     IdeationConfig,
     SelectionConfig,
@@ -72,6 +76,10 @@ class Orchestrator:
         
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize boutique orchestrator (for future use)
+        # For now, keep using phase-based approach for compatibility
+        self._boutique_orchestrator = None
     
     def run_ideas_phase(
         self,
@@ -332,6 +340,7 @@ class Orchestrator:
         print(f"Output directory: {phase3_result['output_dir']}")
         
         # Log summary
+        final_log_paths = {}
         if self.logger.calls:
             total_calls = len(self.logger.calls)
             total_tokens = sum(
@@ -350,6 +359,9 @@ class Orchestrator:
                 print(f"  Total tokens: {total_tokens:,}")
             if total_cost:
                 print(f"  Estimated cost: ${total_cost:.4f}")
+            # Try to get log paths from logger if available
+            if hasattr(self.logger, 'get_log_paths'):
+                final_log_paths = self.logger.get_log_paths() or {}
             if final_log_paths:
                 print(f"  Logs saved: {final_log_paths.get('local', 'N/A')}")
         

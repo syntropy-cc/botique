@@ -21,7 +21,11 @@ from ..core.config import (
     PROMPTS_DIR,
     ROOT_DIR,
 )
-from ..core.llm_client import HttpLLMClient
+# Try new location first, fallback to old location
+try:
+    from framework.llm.http_client import HttpLLMClient
+except ImportError:
+    from ..core.llm_client import HttpLLMClient
 from ..orchestrator import Orchestrator
 
 

@@ -1,0 +1,3 @@
+"""
+Storages específicos do boutique.
+"""

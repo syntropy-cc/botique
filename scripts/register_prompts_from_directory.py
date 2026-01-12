@@ -17,8 +17,13 @@ from typing import Dict, List, Optional, Set
 # Add src to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from core.prompt_registry import register_prompt, find_existing_prompt
-from core.llm_log_db import init_database, get_db_path
+# Try new locations first, fallback to old locations
+try:
+    from framework.llm.prompt_helpers import register_prompt, find_existing_prompt
+    from framework.llm.logger import init_database, get_db_path
+except ImportError:
+    from core.prompt_registry import register_prompt, find_existing_prompt
+    from core.llm_log_db import init_database, get_db_path
 
 
 def extract_placeholders(template: str) -> Set[str]:

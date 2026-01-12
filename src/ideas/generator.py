@@ -10,8 +10,14 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ..core.config import IdeationConfig
-from ..core.llm_client import HttpLLMClient
-from ..core.prompt_registry import get_latest_prompt, get_prompt_by_key_and_version
+# Try new location first, fallback to old location
+try:
+    from framework.llm.http_client import HttpLLMClient
+    from framework.llm.prompt_helpers import get_or_register_prompt as get_latest_prompt
+    from framework.llm.prompt_helpers import get_prompt_by_key_and_version
+except ImportError:
+    from ..core.llm_client import HttpLLMClient
+    from ..core.prompt_registry import get_latest_prompt, get_prompt_by_key_and_version
 from ..core.utils import build_prompt_from_template, validate_llm_json_response
 
 
