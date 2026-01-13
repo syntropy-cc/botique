@@ -12,11 +12,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
+import warnings
 
 import requests
 
 if TYPE_CHECKING:
     from .llm_logger import LLMLogger
+
+from .config import DEEPSEEK_MAX_TOKENS
 
 
 class HttpLLMClient:
@@ -82,7 +85,7 @@ class HttpLLMClient:
     def generate(
         self,
         prompt: str,
-        max_tokens: int = 8048,
+        max_tokens: int = DEEPSEEK_MAX_TOKENS,
         temperature: float = 0.2,
         context: Optional[str] = None,
         save_raw: Optional[bool] = None,
@@ -130,6 +133,22 @@ class HttpLLMClient:
                 # Don't fail the call if prompt registration fails
                 # Just log a warning (could be logged to logger if available)
                 pass
+        
+        # Validate and clamp max_tokens to valid range [1, DEEPSEEK_MAX_TOKENS]
+        original_max_tokens = max_tokens
+        if max_tokens > DEEPSEEK_MAX_TOKENS:
+            warnings.warn(
+                f"max_tokens ({max_tokens}) exceeds DeepSeek API limit ({DEEPSEEK_MAX_TOKENS}). "
+                f"Clamping to {DEEPSEEK_MAX_TOKENS}.",
+                UserWarning,
+            )
+            max_tokens = DEEPSEEK_MAX_TOKENS
+        elif max_tokens < 1:
+            warnings.warn(
+                f"max_tokens ({max_tokens}) is less than minimum (1). Clamping to 1.",
+                UserWarning,
+            )
+            max_tokens = 1
         
         # Start timing
         start_time = time.time()

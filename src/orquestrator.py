@@ -109,7 +109,7 @@ def call_llm_with_prompt(prompt: str, ideation_config: IdeationConfig, model: st
             {"role": "user", "content": prompt}
         ],
         temperature=0.7,
-        max_tokens=8000,
+        max_tokens=8192,
     )
 
     return response.choices[0].message.content.strip()

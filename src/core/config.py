@@ -52,6 +52,9 @@ DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 2048
 DEFAULT_TIMEOUT = 60
 
+# DeepSeek API limits
+DEEPSEEK_MAX_TOKENS = 8192  # Maximum output tokens allowed by DeepSeek API (valid range: [1, 8192])
+
 
 # =============================================================================
 # PIPELINE CONFIGURATION

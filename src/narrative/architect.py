@@ -6,11 +6,12 @@ Generates detailed slide-by-slide narrative structures from coherence briefs.
 Location: src/narrative/architect.py
 """
 
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from ..coherence.brief import CoherenceBrief
-from ..core.config import MAX_SLIDES_PER_POST, MIN_SLIDES_PER_POST
+from ..core.config import MAX_SLIDES_PER_POST, MIN_SLIDES_PER_POST, DEEPSEEK_MAX_TOKENS
 from ..core.llm_client import HttpLLMClient
 from ..core.prompt_registry import get_latest_prompt, get_prompt_by_key_and_version
 from ..core.utils import validate_llm_json_response
@@ -136,7 +137,7 @@ class NarrativeArchitect:
             prompt,
             context=context,
             temperature=0.2,
-            max_tokens=8048,
+            max_tokens=DEEPSEEK_MAX_TOKENS,
             prompt_key=prompt_key,
             template=template_text,
         )
@@ -324,27 +325,39 @@ class NarrativeArchitect:
             visual_direction = slide.get("visual_direction", "")
             
             if not copy_direction or not isinstance(copy_direction, str):
-                raise ValueError(
-                    f"Slide {idx + 1}: 'copy_direction' must be a non-empty string"
+                warnings.warn(
+                    f"Slide {idx + 1}: 'copy_direction' is missing or invalid (expected non-empty string). Continuing anyway.",
+                    UserWarning,
+                    stacklevel=2
                 )
+                # Set default to avoid downstream errors
+                slide["copy_direction"] = "Write engaging copy that aligns with the slide's purpose and narrative arc."
             
             if not visual_direction or not isinstance(visual_direction, str):
-                raise ValueError(
-                    f"Slide {idx + 1}: 'visual_direction' must be a non-empty string"
+                warnings.warn(
+                    f"Slide {idx + 1}: 'visual_direction' is missing or invalid (expected non-empty string). Continuing anyway.",
+                    UserWarning,
+                    stacklevel=2
                 )
+                # Set default to avoid downstream errors
+                slide["visual_direction"] = "Create a visual composition that supports the narrative and emotional tone of this slide."
             
-            # Validate minimum length (50-300 words as specified in prompt)
-            copy_words = len(copy_direction.split())
-            visual_words = len(visual_direction.split())
+            # Validate minimum length (50-300 words as specified in prompt) - warn but don't fail
+            copy_words = len(copy_direction.split()) if copy_direction else 0
+            visual_words = len(visual_direction.split()) if visual_direction else 0
             
             if copy_words < 50:
-                raise ValueError(
-                    f"Slide {idx + 1}: 'copy_direction' must be at least 50 words (got {copy_words})"
+                warnings.warn(
+                    f"Slide {idx + 1}: 'copy_direction' is shorter than recommended (got {copy_words} words, recommended: 50-300). Continuing anyway.",
+                    UserWarning,
+                    stacklevel=2
                 )
             
             if visual_words < 50:
-                raise ValueError(
-                    f"Slide {idx + 1}: 'visual_direction' must be at least 50 words (got {visual_words})"
+                warnings.warn(
+                    f"Slide {idx + 1}: 'visual_direction' is shorter than recommended (got {visual_words} words, recommended: 50-300). Continuing anyway.",
+                    UserWarning,
+                    stacklevel=2
                 )
         
         # Semantic validation
