@@ -192,6 +192,11 @@ Default to smooth if no clear match.
 
 Use KEYWORDS_TO_EMPHASIZE in key_elements.
 
+**Note on Templates:**
+- Templates are selected automatically after structure generation based on semantic analysis of your slide descriptions (purpose, copy_direction, key_elements)
+- Focus on creating clear, detailed slide descriptions—the template selection system will match appropriate templates to each slide
+- You do not need to specify template IDs—they are assigned automatically based on your narrative structure
+
 ### 7. Validation
 - Arc refines NARRATIVE_ARC, achieves OBJECTIVE?
 - Builds toward MAIN_MESSAGE?

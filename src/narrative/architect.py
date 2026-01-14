@@ -172,6 +172,52 @@ class NarrativeArchitect:
                     pass
             raise
         
+        # Post-process: Select templates for each slide using Template Selector
+        from ..templates.selector import TemplateSelector
+        template_selector = TemplateSelector()
+        
+        for slide in payload["slides"]:
+            try:
+                template_id, template_justification, template_confidence = template_selector.select_template(
+                    module_type=slide.get("module_type", ""),
+                    purpose=slide.get("purpose", ""),
+                    copy_direction=slide.get("copy_direction", ""),
+                    key_elements=slide.get("key_elements", []),
+                    persona=brief.persona,
+                    tone=brief.tone,
+                    platform=brief.platform,
+                )
+                slide["template_id"] = template_id
+                slide["template_justification"] = template_justification
+                slide["template_confidence"] = template_confidence
+            except Exception as e:
+                # If template selection fails, log warning but continue
+                # This allows the pipeline to continue even if template selection fails
+                if self.logger:
+                    try:
+                        trace_id = getattr(self.logger, 'current_trace_id', None) or getattr(self.logger, 'session_id', None)
+                        if trace_id:
+                            self.logger.log_step_event(
+                                trace_id=trace_id,
+                                name=f"template_selector_warning_{brief.post_id}",
+                                input_text=f"Template selection for slide {slide.get('slide_number', 'unknown')}",
+                                output_text=None,
+                                error=str(e),
+                                status="warning",
+                                type="postprocess",
+                                metadata={
+                                    "post_id": brief.post_id,
+                                    "slide_number": slide.get("slide_number"),
+                                    "module_type": slide.get("module_type"),
+                                },
+                            )
+                    except Exception:
+                        pass
+                # Continue without template_id if selection fails
+                slide["template_id"] = None
+                slide["template_justification"] = None
+                slide["template_confidence"] = 0.0
+        
         # Build normalized narrative structure
         # Include all fields from payload for brief enrichment
         narrative_structure = {

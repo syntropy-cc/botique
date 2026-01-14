@@ -1,7 +1,7 @@
 """
 Copywriter module
 
-Generates text content for slides with positioning and emphasis specifications.
+Generates text content for slides with emphasis guidance.
 
 Location: src/copywriting/writer.py
 """
@@ -57,11 +57,11 @@ def _build_slide_insights_block(brief: CoherenceBrief, slide_info: Dict[str, Any
 
 class Copywriter:
     """
-    Generate text content for slides with positioning and emphasis.
+    Generate text content for slides with emphasis guidance.
     
-    Creates text content (title, subtitle, body) with low-level positioning
-    (x, y coordinates) and emphasis styles (bold, italic, underline, etc.)
-    for each slide based on narrative structure and coherence brief.
+    Creates text content (title, subtitle, body) with emphasis guidance
+    (list of strings to emphasize) for each slide based on narrative structure
+    and coherence brief. Positioning and visual styling are handled by the Visual Composer.
     """
     
     def __init__(
@@ -313,9 +313,22 @@ class Copywriter:
         slides_context_lines = []
         all_referenced_insights = set()
         
+        # Extract template_ids from slides
+        template_ids = []
+        for slide in slides_info:
+            template_id = slide.get("template_id")
+            if template_id:
+                template_ids.append(template_id)
+        
+        # Load templates library and get detailed reference for selected templates
+        from ..templates.library import TemplateLibrary
+        template_library = TemplateLibrary()
+        templates_reference = template_library.to_detailed_reference(template_ids) if template_ids else "- (no templates selected)"
+        
         for slide in slides_info:
             slide_num = slide.get("slide_number", "?")
             module_type = slide.get("module_type", "unknown")
+            template_id = slide.get("template_id", "N/A")
             purpose = slide.get("purpose", "")
             copy_direction = slide.get("copy_direction", "")
             visual_direction = slide.get("visual_direction", "")
@@ -333,7 +346,7 @@ class Copywriter:
             all_referenced_insights.update(referenced_ids)
             
             slides_context_lines.append(
-                f"  SLIDE {slide_num} ({module_type}):\n"
+                f"  SLIDE {slide_num} ({module_type}, template: {template_id}):\n"
                 f"    Purpose: {purpose}\n"
                 f"    Copy Direction: {copy_direction[:200]}{'...' if len(copy_direction) > 200 else ''}\n"
                 f"    Visual Direction: {visual_direction[:200]}{'...' if len(visual_direction) > 200 else ''}\n"
@@ -406,10 +419,8 @@ class Copywriter:
             "total_slides": str(len(slides_info)),
             "slides_context": slides_context_block,
             
-            # Branding (Reference only - for positioning calculations)
-            "canvas_width": str(brief.canvas.get("width", 1080)),
-            "canvas_height": str(brief.canvas.get("height", 1350)),
-            "canvas_aspect_ratio": brief.canvas.get("aspect_ratio", "4:5"),
+            # Templates Reference
+            "templates_reference": templates_reference,
             
             # Constraints
             "avoid_topics": ", ".join(brief.avoid_topics),
@@ -457,10 +468,7 @@ class Copywriter:
         # Create a map of expected slide numbers
         expected_slide_numbers = {slide.get("slide_number") for slide in slides_info}
         
-        # Validate each slide
-        canvas_width = brief.canvas.get("width", 1080)
-        canvas_height = brief.canvas.get("height", 1350)
-        
+            # Validate each slide
         for slide_idx, slide_payload in enumerate(slides):
             # Find corresponding slide_info
             slide_number = slide_payload.get("slide_number")
@@ -497,15 +505,12 @@ class Copywriter:
                 
                 at_least_one = True
                 
-                # Must have content, position, emphasis
+                # Must have content and emphasis
                 if not isinstance(element, dict):
                     raise ValueError(f"Slide {slide_number}: {element_name} must be an object or null, got {type(element).__name__}")
                 
                 if "content" not in element:
                     raise ValueError(f"Slide {slide_number}: {element_name} missing 'content' field")
-                
-                if "position" not in element:
-                    raise ValueError(f"Slide {slide_number}: {element_name} missing 'position' field")
                 
                 if "emphasis" not in element:
                     raise ValueError(f"Slide {slide_number}: {element_name} missing 'emphasis' field")
@@ -514,118 +519,15 @@ class Copywriter:
                 content = element.get("content")
                 if not isinstance(content, str) or len(content) == 0:
                     raise ValueError(f"Slide {slide_number}: {element_name}.content must be a non-empty string")
-            
-                # Validate position
-                position = element.get("position")
-                if not isinstance(position, dict):
-                    raise ValueError(f"Slide {slide_number}: {element_name}.position must be an object")
                 
-                x = position.get("x")
-                y = position.get("y")
-                
-                if not isinstance(x, int) or not isinstance(y, int):
-                    raise ValueError(f"Slide {slide_number}: {element_name}.position.x and .y must be integers")
-                
-                if x < 0 or x > canvas_width:
-                    raise ValueError(
-                        f"Slide {slide_number}: {element_name}.position.x ({x}) out of bounds (0-{canvas_width})"
-                    )
-                
-                if y < 0 or y > canvas_height:
-                    raise ValueError(
-                        f"Slide {slide_number}: {element_name}.position.y ({y}) out of bounds (0-{canvas_height})"
-                    )
-                
-                # Validate emphasis
+                # Validate emphasis (simplified - list of strings)
                 emphasis = element.get("emphasis")
                 if not isinstance(emphasis, list):
                     raise ValueError(f"Slide {slide_number}: {element_name}.emphasis must be an array")
                 
-                for emph_idx, emph in enumerate(emphasis):
-                    if not isinstance(emph, dict):
-                        raise ValueError(f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] must be an object")
-                    
-                    required_keys = ["text", "start_index", "end_index", "styles"]
-                    missing = [k for k in required_keys if k not in emph]
-                    if missing:
-                        raise ValueError(f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] missing keys: {missing}")
-                
-                    # Validate indices
-                    start_idx = emph.get("start_index")
-                    end_idx = emph.get("end_index")
-                    original_start_idx = start_idx
-                    original_end_idx = end_idx
-                    
-                    if not isinstance(start_idx, int) or not isinstance(end_idx, int):
-                        raise ValueError(f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}].start_index and .end_index must be integers")
-                    
-                    # Auto-correct indices that are slightly out of bounds
-                    # This handles cases where the LLM miscalculates indices due to Unicode or other issues
-                    content_len = len(content)
-                    actual_text = emph.get("text", "")
-                    
-                    # First, check if indices are valid and text matches
-                    indices_valid = (0 <= start_idx < end_idx <= content_len)
-                    text_matches = False
-                    if indices_valid:
-                        expected_text = content[start_idx:end_idx]
-                        text_matches = (actual_text == expected_text)
-                    
-                    # If indices are invalid or text doesn't match, try to auto-correct
-                    if not indices_valid or not text_matches:
-                        if actual_text:
-                            # Try to find the text in the content
-                            # First, try near the original start_idx (within 10 characters)
-                            found_pos = -1
-                            search_start = max(0, start_idx - 10)
-                            search_end = min(content_len, start_idx + 50)
-                            candidate = content[search_start:search_end]
-                            pos_in_candidate = candidate.find(actual_text)
-                            if pos_in_candidate != -1:
-                                found_pos = search_start + pos_in_candidate
-                            
-                            # If not found nearby, search the entire content
-                            if found_pos == -1:
-                                found_pos = content.find(actual_text)
-                            
-                            if found_pos != -1:
-                                # Found the text - use these indices
-                                start_idx = found_pos
-                                end_idx = found_pos + len(actual_text)
-                                # Update the emphasis dict with corrected indices
-                                emph["start_index"] = start_idx
-                                emph["end_index"] = end_idx
-                            else:
-                                # Text not found - check if it's a small index error
-                                if end_idx > content_len and end_idx <= content_len + 5:
-                                    # Small overrun - try clamping end_idx and checking if text matches
-                                    clamped_end = content_len
-                                    if start_idx < clamped_end:
-                                        expected_text = content[start_idx:clamped_end]
-                                        # Check if actual_text is a prefix of expected_text
-                                        if actual_text and expected_text.startswith(actual_text):
-                                            # Text matches as prefix - use clamped end
-                                            end_idx = start_idx + len(actual_text)
-                                            emph["start_index"] = start_idx
-                                            emph["end_index"] = end_idx
-                                        else:
-                                            raise ValueError(
-                                                f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] invalid indices: "
-                                                f"start_index={original_start_idx}, end_index={original_end_idx}, "
-                                                f"content_length={content_len}, and text '{actual_text}' not found in content"
-                                            )
-                                    else:
-                                        raise ValueError(
-                                            f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] invalid indices: "
-                                            f"start_index={original_start_idx}, end_index={original_end_idx}, "
-                                            f"content_length={content_len}"
-                                        )
-                                else:
-                                    raise ValueError(
-                                        f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] invalid indices: "
-                                        f"start_index={original_start_idx}, end_index={original_end_idx}, "
-                                        f"content_length={content_len}, and text '{actual_text}' not found in content"
-                                    )
+                for emph_idx, emph_item in enumerate(emphasis):
+                    if not isinstance(emph_item, str):
+                        raise ValueError(f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] must be a string, got {type(emph_item).__name__}")
                         else:
                             # No text provided - can't auto-correct
                             if end_idx > content_len:
