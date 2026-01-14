@@ -116,8 +116,9 @@ Number of slides in this post
 {slides_context}
 
 This block contains information for ALL slides. Each slide entry includes:
-- Slide number and module type
-- Template ID (textual template selected for this slide)
+- Slide number and template type (hook, transition, value, cta)
+- Value subtype (if template type is 'value': data, insight, solution, example)
+- Template ID (specific textual template selected for this slide)
 - Purpose and narrative role
 - Copy direction (detailed guidance)
 - Visual direction (reference)
@@ -158,12 +159,15 @@ Examine the `slides_context` block to understand:
 - Overall narrative arc
 
 ### 2. Determine Text Elements for Each Slide
-For EACH slide, based on its `module_type`, `purpose`, `copy_direction`, and `content_slots`:
+For EACH slide, based on its `template_type`, `value_subtype`, `purpose`, `copy_direction`, and `content_slots`:
 
 - **hook** → Usually `title` only or `title` + `subtitle`
 - **transition** → Usually `body` only or `subtitle` only
-- **problem**, **insight**, **solution** → May have `title` + `body`, or `body` only
-- **value_prop** → Usually `title` + `subtitle`, or `title` + `body`
+- **value** (any subtype) → May have `title` + `body`, or `body` only
+  - **data** → Often emphasizes numbers/statistics in title
+  - **insight** → Often uses title for key takeaway
+  - **solution** → Often uses body for steps/frameworks
+  - **example** → Often uses body for case narrative
 - **cta** → Usually `title` only (with `subtitle` if needed)
 
 Check each slide's `content_slots`:

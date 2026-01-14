@@ -1,0 +1,21 @@
+# Dependencies for Template Selector with semantic analysis
+# 
+# To install: pip install -r requirements_templates.txt
+#
+# These dependencies are required for the template selection system
+# that uses embeddings for real semantic analysis.
+
+# Main library for semantic embeddings
+sentence-transformers>=2.2.0
+
+# Required dependencies for sentence-transformers (usually installed automatically)
+torch>=1.9.0
+transformers>=4.20.0
+numpy>=1.19.0
+
+# Optional: For performance optimization
+# sentencepiece>=0.1.96  # For specific models
+# faiss-cpu>=1.7.0       # For fast vector search in large collections
+
+# NOTE: The system has automatic fallback if sentence-transformers is not available.
+# In that case, it uses keyword matching (previous method).

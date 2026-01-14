@@ -179,7 +179,8 @@ class NarrativeArchitect:
         for slide in payload["slides"]:
             try:
                 template_id, template_justification, template_confidence = template_selector.select_template(
-                    module_type=slide.get("module_type", ""),
+                    template_type=slide.get("template_type", ""),
+                    value_subtype=slide.get("value_subtype"),
                     purpose=slide.get("purpose", ""),
                     copy_direction=slide.get("copy_direction", ""),
                     key_elements=slide.get("key_elements", []),
@@ -208,7 +209,8 @@ class NarrativeArchitect:
                                 metadata={
                                     "post_id": brief.post_id,
                                     "slide_number": slide.get("slide_number"),
-                                    "module_type": slide.get("module_type"),
+                                    "template_type": slide.get("template_type"),
+                                    "value_subtype": slide.get("value_subtype"),
                                 },
                             )
                     except Exception:
@@ -353,7 +355,8 @@ class NarrativeArchitect:
             list_validations={
                 "slides": [
                     "slide_number",
-                    "module_type",
+                    "template_type",
+                    "value_subtype",
                     "purpose",
                     "target_emotions",
                     "copy_direction",

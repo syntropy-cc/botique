@@ -1,95 +1,108 @@
 # Botique
 
-Sistema multi-agente para gestão de marca pessoal e geração de conteúdo para redes sociais.
+Multi-agent system for personal brand management and social media content generation.
 
-## Funcionalidades
+## Features
 
-- **Pipeline completo**: Geração de ideias e briefs de coerência a partir de artigos
-- **Versionamento de prompts**: Sistema automático de versionamento com prevenção de duplicatas
+- **Complete Pipeline**: Generate ideas and coherence briefs from articles
+- **Prompt Versioning**: Automatic versioning system with duplicate prevention
 - **Event Logging**: Database-based logging system tracking all workflow events (LLM calls and non-LLM steps) with cost metrics, performance, and quality tracking
-- **CLI integrado**: Interface de linha de comando para todas as operações
+- **Semantic Template Selection**: Advanced template matching using embeddings for 91% accuracy
+- **Integrated CLI**: Command-line interface for all operations
 
-## Instalação
+## Installation
 
 ```bash
-# Clone o repositório
+# Clone repository
 git clone <repo-url>
 cd botique
 
-# Instale dependências (se necessário)
+# Install dependencies (if needed)
 pip install -r requirements.txt
+
+# (Optional) For advanced semantic template analysis
+pip install -r requirements_templates.txt
 ```
 
-## Uso Rápido
+### Semantic Template Analysis
 
-### 1. Registrar Prompts
+The system uses embeddings for intelligent template selection based on real meaning, not just keywords:
 
-Primeiro, registre todos os prompts no banco de dados:
+- ✅ **With embeddings** (recommended): `pip install sentence-transformers`
+- ⚠️ **Without embeddings**: Automatic fallback to keyword-based method
+
+See [detailed documentation](./docs/SEMANTIC_TEMPLATE_SELECTION.md) about the semantic selection system.
+
+## Quick Usage
+
+### 1. Register Prompts
+
+First, register all prompts in the database:
 
 ```bash
 python -m src.cli.commands prompts
 ```
 
-### 2. Executar Pipeline
+### 2. Run Pipeline
 
 ```bash
-# Pipeline completo
-python -m src.cli.commands full --article articles/artigo.md
+# Complete pipeline
+python -m src.cli.commands full --article articles/article.md
 
-# Ou fases separadas
-python -m src.cli.commands ideas --article articles/artigo.md
+# Or separate phases
+python -m src.cli.commands ideas --article articles/article.md
 python -m src.cli.commands briefs --ideas-json output/slug/phase1_ideas.json
 ```
 
-## Comandos CLI
+## CLI Commands
 
-### `prompts` - Gerenciar Prompts
+### `prompts` - Manage Prompts
 
-Registra e atualiza prompts do diretório `prompts/` no banco de dados.
+Registers and updates prompts from `prompts/` directory in the database.
 
 ```bash
-# Registrar todos os prompts
+# Register all prompts
 python -m src.cli.commands prompts
 
-# Atualizar metadados de prompts existentes
+# Update metadata of existing prompts
 python -m src.cli.commands prompts --update-metadata
 
-# Especificar diretório customizado
-python -m src.cli.commands prompts --prompts-dir /caminho/para/prompts
+# Specify custom directory
+python -m src.cli.commands prompts --prompts-dir /path/to/prompts
 ```
 
-**Recursos:**
-- ✅ Versionamento automático (v1, v2, v3...)
-- ✅ Prevenção de duplicatas
-- ✅ Cálculo automático de métricas (tamanho, complexidade, tokens)
-- ✅ Metadados completos armazenados
+**Features:**
+- ✅ Automatic versioning (v1, v2, v3...)
+- ✅ Duplicate prevention
+- ✅ Automatic metrics calculation (size, complexity, tokens)
+- ✅ Complete metadata storage
 
-### `full` - Pipeline Completo
+### `full` - Complete Pipeline
 
-Executa o pipeline completo: Artigo → Ideias → Briefs.
+Executes complete pipeline: Article → Ideas → Briefs.
 
 ```bash
 python -m src.cli.commands full \
-  --article articles/artigo.md \
+  --article articles/article.md \
   --min-ideas 5 \
   --max-ideas 8 \
   --max-posts 3
 ```
 
-### `ideas` - Fase 1: Geração de Ideias
+### `ideas` - Phase 1: Idea Generation
 
-Gera ideias de posts a partir de um artigo.
+Generates post ideas from an article.
 
 ```bash
 python -m src.cli.commands ideas \
-  --article articles/artigo.md \
+  --article articles/article.md \
   --min-ideas 3 \
   --max-ideas 6
 ```
 
-### `briefs` - Fases 2 e 3: Briefs de Coerência
+### `briefs` - Phases 2 and 3: Coherence Briefs
 
-Gera briefs de coerência a partir de ideias selecionadas.
+Generates coherence briefs from selected ideas.
 
 ```bash
 python -m src.cli.commands briefs \
@@ -98,72 +111,78 @@ python -m src.cli.commands briefs \
   --max-posts 3
 ```
 
-## Configuração
+## Configuration
 
-### Variáveis de Ambiente
+### Environment Variables
 
 ```bash
-# Chave da API LLM (obrigatória)
-export LLM_API_KEY="sua-chave-aqui"
+# LLM API key (required)
+export LLM_API_KEY="your-key-here"
 
-# Caminho customizado para banco de dados SQLite (opcional)
-export LLM_LOGS_DB_PATH="/caminho/para/llm_logs.db"
+# Custom path for SQLite database (optional)
+export LLM_LOGS_DB_PATH="/path/to/llm_logs.db"
 
-# Para usar PostgreSQL ao invés de SQLite (opcional)
+# To use PostgreSQL instead of SQLite (optional)
 export DB_URL="postgresql://user:password@localhost/dbname"
 ```
 
-## Estrutura do Projeto
+## Project Structure
 
 ```
 botique/
 ├── src/
-│   ├── cli/              # Interface de linha de comando
-│   ├── core/             # Módulos core (logging, prompts, etc.)
-│   ├── coherence/        # Sistema de coerência
-│   ├── ideas/            # Geração de ideias
-│   └── phases/           # Fases do pipeline
-├── prompts/              # Templates de prompts (.md)
-├── articles/             # Artigos de entrada
-├── output/               # Resultados do pipeline
-├── scripts/              # Scripts utilitários
-└── docs/                 # Documentação
+│   ├── cli/              # Command-line interface
+│   ├── core/             # Core modules (logging, prompts, etc.)
+│   ├── coherence/        # Coherence system
+│   ├── ideas/            # Idea generation
+│   ├── templates/        # Template system with semantic selection
+│   └── phases/           # Pipeline phases
+├── prompts/              # Prompt templates (.md)
+├── articles/             # Input articles
+├── output/               # Pipeline results
+├── scripts/              # Utility scripts
+└── docs/                 # Documentation
 ```
 
-## Sistema de Versionamento de Prompts
+## Prompt Versioning System
 
-O sistema oferece versionamento automático de prompts:
+The system offers automatic prompt versioning:
 
-- **Automático**: Versões criadas automaticamente (v1, v2, v3...)
-- **Sem duplicatas**: Templates idênticos retornam versão existente
-- **Métricas**: Calcula tamanho, complexidade, tokens estimados
-- **Rastreável**: Cada evento LLM ligado à versão específica do prompt
+- **Automatic**: Versions created automatically (v1, v2, v3...)
+- **No duplicates**: Identical templates return existing version
+- **Metrics**: Calculates size, complexity, estimated tokens
+- **Traceable**: Each LLM event linked to specific prompt version
 
 ```bash
-# Registrar prompts (primeira vez)
+# Register prompts (first time)
 python -m src.cli.commands prompts
 
-# Atualizar metadados (após modificar prompts)
+# Update metadata (after modifying prompts)
 python -m src.cli.commands prompts --update-metadata
 ```
 
-## Documentação
+## Documentation
 
-- [Comandos CLI](./docs/cli_commands.md) - Guia completo de comandos
-- [Event Logging](./docs/event_logging.md) - Sistema de logging de eventos
-- [Versionamento de Prompts](./docs/prompt_versioning_automatic.md) - Sistema de versionamento
-- [Arquitetura do Pipeline](./docs/pipeline_architecture.md) - Visão geral do sistema
+- [CLI Commands](./docs/cli_commands.md) - Complete command guide
+- [Event Logging](./docs/event_logging.md) - Event logging system
+- [Prompt Versioning](./docs/prompt_versioning_automatic.md) - Versioning system
+- [Pipeline Architecture](./docs/pipeline_architecture.md) - System overview
+- [Semantic Template Selection](./docs/SEMANTIC_TEMPLATE_SELECTION.md) - Embeddings-based template matching
+- [Template System](./docs/template_based_narrative_system.md) - Template hierarchy and selection
 
-## Desenvolvimento
+## Development
 
 ```bash
-# Executar testes
+# Run tests
 python scripts/test_prompt_versioning.py
 
-# Registrar prompts para desenvolvimento
+# Test semantic selector
+python scripts/test_semantic_selector.py
+
+# Register prompts for development
 python -m src.cli.commands prompts --update-metadata
 ```
 
-## Licença
+## License
 
-[Adicione informações de licença aqui]
+[Add license information here]

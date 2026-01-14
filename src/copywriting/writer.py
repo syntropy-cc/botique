@@ -327,7 +327,8 @@ class Copywriter:
         
         for slide in slides_info:
             slide_num = slide.get("slide_number", "?")
-            module_type = slide.get("module_type", "unknown")
+            template_type = slide.get("template_type", "unknown")
+            value_subtype = slide.get("value_subtype")
             template_id = slide.get("template_id", "N/A")
             purpose = slide.get("purpose", "")
             copy_direction = slide.get("copy_direction", "")
@@ -345,8 +346,13 @@ class Copywriter:
             referenced_ids = set(slide.get("insights_referenced", []))
             all_referenced_insights.update(referenced_ids)
             
+            # Build template type display
+            template_type_display = template_type
+            if template_type == "value" and value_subtype:
+                template_type_display = f"{template_type}/{value_subtype}"
+            
             slides_context_lines.append(
-                f"  SLIDE {slide_num} ({module_type}, template: {template_id}):\n"
+                f"  SLIDE {slide_num} ({template_type_display}, template: {template_id}):\n"
                 f"    Purpose: {purpose}\n"
                 f"    Copy Direction: {copy_direction[:200]}{'...' if len(copy_direction) > 200 else ''}\n"
                 f"    Visual Direction: {visual_direction[:200]}{'...' if len(visual_direction) > 200 else ''}\n"
@@ -528,19 +534,6 @@ class Copywriter:
                 for emph_idx, emph_item in enumerate(emphasis):
                     if not isinstance(emph_item, str):
                         raise ValueError(f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] must be a string, got {type(emph_item).__name__}")
-                        else:
-                            # No text provided - can't auto-correct
-                            if end_idx > content_len:
-                                raise ValueError(
-                                    f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] invalid indices: "
-                                    f"start_index={start_idx}, end_index={original_end_idx}, content_length={content_len}"
-                                )
-                            elif end_idx <= start_idx:
-                                raise ValueError(
-                                    f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] invalid indices: "
-                                    f"start_index={original_start_idx}, end_index={original_end_idx}, "
-                                    f"content_length={content_len}"
-                                )
                     
                     # Final validation: ensure text matches content substring
                     expected_text = content[start_idx:end_idx]
@@ -613,8 +606,8 @@ class Copywriter:
         # without NLP, so we skip this for now
         
         # Validate CTA guidelines are present for CTA slides
-        module_type = slide_info.get("module_type")
-        if module_type == "cta":
+        template_type = slide_info.get("template_type")
+        if template_type == "cta":
             cta_guidelines = slide_payload.get("cta_guidelines")
             if not cta_guidelines:
                 # This is a warning, not an error - CTA guidelines are helpful but not strictly required
