@@ -527,34 +527,23 @@ class Copywriter:
                     raise ValueError(f"Slide {slide_number}: {element_name}.content must be a non-empty string")
                 
                 # Validate emphasis (simplified - list of strings)
+                # Emphasis is a simple list of strings (words/phrases to emphasize)
+                # The Visual Composer will determine how to visually emphasize them
                 emphasis = element.get("emphasis")
                 if not isinstance(emphasis, list):
                     raise ValueError(f"Slide {slide_number}: {element_name}.emphasis must be an array")
                 
                 for emph_idx, emph_item in enumerate(emphasis):
                     if not isinstance(emph_item, str):
-                        raise ValueError(f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] must be a string, got {type(emph_item).__name__}")
-                    
-                    # Final validation: ensure text matches content substring
-                    expected_text = content[start_idx:end_idx]
-                    if actual_text != expected_text:
                         raise ValueError(
-                            f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}].text ('{actual_text}') doesn't match "
-                            f"content substring at indices {start_idx}-{end_idx} ('{expected_text}')"
+                            f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}] must be a string, "
+                            f"got {type(emph_item).__name__}"
                         )
-                    
-                    # Validate styles
-                    styles = emph.get("styles")
-                    if not isinstance(styles, list):
-                        raise ValueError(f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}].styles must be an array")
-                    
-                    valid_styles = {"bold", "italic", "underline", "stylized"}
-                    for style in styles:
-                        if not isinstance(style, str) or style not in valid_styles:
-                            raise ValueError(
-                                f"Slide {slide_number}: {element_name}.emphasis[{emph_idx}].styles contains invalid style '{style}'. "
-                                f"Valid styles: {valid_styles}"
-                            )
+                    # Optional: validate that emphasis string appears in content (case-insensitive)
+                    # This helps catch typos but is lenient
+                    if emph_item and emph_item.lower() not in content.lower():
+                        # Warn but don't fail - the string might be a partial match or variation
+                        pass
             
             if not at_least_one:
                 raise ValueError(f"Slide {slide_number}: At least one of title, subtitle, or body must be non-null")

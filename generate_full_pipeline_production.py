@@ -234,9 +234,10 @@ def generate_workflow_documentation(
     lines.append("3. [Phase 1: Ideation](#phase-1-ideation)")
     lines.append("4. [Phase 2: Coherence Briefs](#phase-2-coherence-briefs)")
     lines.append("5. [Phase 3: Narrative Architect](#phase-3-narrative-architect)")
-    lines.append("6. [Phase 4: Copywriter](#phase-4-copywriter)")
-    lines.append("7. [LLM Events & Responses](#llm-events--responses)")
-    lines.append("8. [Metrics Summary](#metrics-summary)")
+    lines.append("6. [Template Selection System](#template-selection-system)")
+    lines.append("7. [Phase 4: Copywriter](#phase-4-copywriter)")
+    lines.append("8. [LLM Events & Responses](#llm-events--responses)")
+    lines.append("9. [Metrics Summary](#metrics-summary)")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -249,7 +250,7 @@ def generate_workflow_documentation(
         lines.append(f"- **Article:** {trace_metadata.get('article_slug', article_slug)}")
         lines.append(f"- **Total Ideas Generated:** {len(all_ideas)}")
         lines.append(f"- **Total Posts Processed:** {len(all_copy_results)}")
-        total_slides = sum(len(r["slide_contents"]) for r in all_copy_results)
+        total_slides = sum(len(r.get("slide_contents", [])) if isinstance(r.get("slide_contents"), list) else 0 for r in all_copy_results)
         lines.append(f"- **Total Slides Generated:** {total_slides}")
         lines.append(f"- **Trace Created:** {trace_data.get('created_at', 'N/A')}")
     lines.append("")
@@ -301,6 +302,21 @@ def generate_workflow_documentation(
         narrative_payload = result.get("narrative_payload", {})
         slide_contents = result.get("slide_contents", [])
         
+        # Ensure narrative_payload is a dict (not a string or other type)
+        if not isinstance(narrative_payload, dict):
+            if isinstance(narrative_payload, str):
+                try:
+                    import json
+                    narrative_payload = json.loads(narrative_payload)
+                except (json.JSONDecodeError, ValueError):
+                    narrative_payload = {}
+            else:
+                narrative_payload = {}
+        
+        # Ensure slide_contents is a list
+        if not isinstance(slide_contents, list):
+            slide_contents = []
+        
         lines.append(f"## Post {result_idx}: {brief.post_id}")
         lines.append("")
         
@@ -318,15 +334,73 @@ def generate_workflow_documentation(
         lines.append("")
         
         # Narrative Structure Overview
-        if narrative_payload:
+        if narrative_payload and isinstance(narrative_payload, dict):
             lines.append("### Narrative Structure Overview")
             lines.append("")
-            lines.append(f"- **Pacing:** {narrative_payload.get('pacing', 'N/A')}")
+            # Support both "pacing" (normalized) and "narrative_pacing" (raw response)
+            pacing_value = narrative_payload.get('narrative_pacing') or narrative_payload.get('pacing', 'N/A')
+            lines.append(f"- **Pacing:** {pacing_value}")
             lines.append(f"- **Transition Style:** {narrative_payload.get('transition_style', 'N/A')}")
             lines.append(f"- **Total Slides:** {len(narrative_payload.get('slides', []))}")
+            slides = narrative_payload.get("slides", [])
             if narrative_payload.get('arc_refined'):
                 lines.append(f"- **Arc Refined:** {narrative_payload.get('arc_refined', 'N/A')}")
             lines.append("")
+            
+            # Template Selection Details
+            template_selection_stats = narrative_payload.get("_template_selection_stats", {})
+            if template_selection_stats or (isinstance(slides, list) and any(isinstance(slide, dict) and slide.get("template_id") for slide in slides)):
+                lines.append("### Template Selection System")
+                lines.append("")
+                
+                # Template statistics
+                if template_selection_stats:
+                    total_slides = template_selection_stats.get("total_slides", 0)
+                    templates_selected = template_selection_stats.get("templates_selected", 0)
+                    templates_missing = template_selection_stats.get("templates_missing", 0)
+                    avg_confidence = template_selection_stats.get("avg_confidence", 0.0)
+                    
+                    lines.append("#### Template Selection Statistics")
+                    lines.append("")
+                    lines.append(f"- **Total Slides:** {total_slides}")
+                    lines.append(f"- **Templates Selected:** {templates_selected}")
+                    if templates_missing > 0:
+                        lines.append(f"- **Templates Missing:** {templates_missing} ⚠️")
+                    if avg_confidence > 0:
+                        lines.append(f"- **Average Confidence:** {avg_confidence:.2f}")
+                    lines.append("")
+                
+                # Template breakdown by slide
+                lines.append("#### Templates by Slide")
+                lines.append("")
+                template_ids = set()
+                for slide in slides:
+                    slide_num = slide.get("slide_number", "?")
+                    template_type = slide.get("template_type", "unknown")
+                    value_subtype = slide.get("value_subtype")
+                    template_id = slide.get("template_id")
+                    template_confidence = slide.get("template_confidence")
+                    template_justification = slide.get("template_justification", "")
+                    
+                    template_type_display = f"{template_type}/{value_subtype}" if value_subtype else template_type
+                    
+                    if template_id:
+                        template_ids.add(template_id)
+                        status_icon = "✓"
+                        lines.append(f"- **Slide {slide_num}** ({template_type_display}): `{template_id}`")
+                        if template_confidence is not None:
+                            lines.append(f"  - Confidence: {template_confidence:.2f}")
+                        if template_justification:
+                            justification_preview = template_justification[:200] + "..." if len(template_justification) > 200 else template_justification
+                            lines.append(f"  - Justification: {justification_preview}")
+                    else:
+                        status_icon = "✗"
+                        lines.append(f"- **Slide {slide_num}** ({template_type_display}): *(no template selected)* ⚠️")
+                    lines.append("")
+                
+                if template_ids:
+                    lines.append(f"- **Unique Templates Used:** {len(template_ids)}")
+                    lines.append("")
         
         # Combine narrative structure and copy for each slide
         lines.append("### Slides: Narrative Structure & Copy")
@@ -334,15 +408,21 @@ def generate_workflow_documentation(
         
         # Create maps for easy lookup
         slides_narrative = {}
-        if narrative_payload:
-            for slide in narrative_payload.get("slides", []):
-                slide_num = slide.get("slide_number", "?")
-                slides_narrative[slide_num] = slide
+        if narrative_payload and isinstance(narrative_payload, dict):
+            slides_list = narrative_payload.get("slides", [])
+            if isinstance(slides_list, list):
+                for slide in slides_list:
+                    if isinstance(slide, dict):
+                        slide_num = slide.get("slide_number", "?")
+                        slides_narrative[slide_num] = slide
         
         slides_copy_map = {}
-        for slide_result in slide_contents:
-            slide_num = slide_result["slide_number"]
-            slides_copy_map[slide_num] = slide_result["slide_content"]
+        if isinstance(slide_contents, list):
+            for slide_result in slide_contents:
+                if isinstance(slide_result, dict):
+                    slide_num = slide_result.get("slide_number")
+                    if slide_num is not None:
+                        slides_copy_map[slide_num] = slide_result.get("slide_content")
         
         # Get all slide numbers in order
         all_slide_nums = sorted(set(list(slides_narrative.keys()) + list(slides_copy_map.keys())))
@@ -356,9 +436,27 @@ def generate_workflow_documentation(
             
             # Narrative Structure for this slide
             if slide_narrative:
-                module_type = slide_narrative.get("module_type", "unknown")
-                lines.append(f"**Type:** {module_type}")
+                template_type = slide_narrative.get("template_type", "unknown")
+                value_subtype = slide_narrative.get("value_subtype")
+                type_display = f"{template_type}/{value_subtype}" if value_subtype else template_type
+                lines.append(f"**Type:** {type_display}")
                 lines.append("")
+                
+                template_id = slide_narrative.get("template_id")
+                template_justification = slide_narrative.get("template_justification")
+                template_confidence = slide_narrative.get("template_confidence")
+                if template_id:
+                    lines.append(f"**Template ID:** {template_id}")
+                    lines.append("")
+                if template_justification:
+                    lines.append("**Template Justification:**")
+                    lines.append("")
+                    lines.append(template_justification[:400] + ("..." if len(template_justification) > 400 else ""))
+                    lines.append("")
+                if template_confidence is not None:
+                    lines.append(f"**Template Confidence:** {template_confidence}")
+                    lines.append("")
+                
                 lines.append(f"**Purpose:** {slide_narrative.get('purpose', 'N/A')}")
                 lines.append("")
                 
@@ -412,17 +510,14 @@ def generate_workflow_documentation(
                             pos_y = title_position.get("y", "N/A")
                             lines.append(f"- **Position:** x={pos_x}, y={pos_y}")
                         
-                        if title_emphasis:
+                        if title_emphasis and isinstance(title_emphasis, list):
                             lines.append(f"- **Emphasis Spans:** {len(title_emphasis)}")
                             lines.append("")
-                            for idx, emph in enumerate(title_emphasis, 1):
-                                emph_text = emph.get("text", "")
-                                start_idx = emph.get("start_index", "N/A")
-                                end_idx = emph.get("end_index", "N/A")
-                                styles = ", ".join(emph.get("styles", []))
-                                lines.append(f"  {idx}. Text: `{emph_text}`")
-                                lines.append(f"     Indices: {start_idx}-{end_idx}")
-                                lines.append(f"     Styles: `{styles}`")
+                            for idx, emph_item in enumerate(title_emphasis, 1):
+                                if isinstance(emph_item, str):
+                                    lines.append(f"  {idx}. Text: `{emph_item}`")
+                                else:
+                                    lines.append(f"  {idx}. Text: `{str(emph_item)}`")
                         else:
                             lines.append(f"- **Emphasis Spans:** None")
                         lines.append("")
@@ -455,17 +550,14 @@ def generate_workflow_documentation(
                             pos_y = subtitle_position.get("y", "N/A")
                             lines.append(f"- **Position:** x={pos_x}, y={pos_y}")
                         
-                        if subtitle_emphasis:
+                        if subtitle_emphasis and isinstance(subtitle_emphasis, list):
                             lines.append(f"- **Emphasis Spans:** {len(subtitle_emphasis)}")
                             lines.append("")
-                            for idx, emph in enumerate(subtitle_emphasis, 1):
-                                emph_text = emph.get("text", "")
-                                start_idx = emph.get("start_index", "N/A")
-                                end_idx = emph.get("end_index", "N/A")
-                                styles = ", ".join(emph.get("styles", []))
-                                lines.append(f"  {idx}. Text: `{emph_text}`")
-                                lines.append(f"     Indices: {start_idx}-{end_idx}")
-                                lines.append(f"     Styles: `{styles}`")
+                            for idx, emph_item in enumerate(subtitle_emphasis, 1):
+                                if isinstance(emph_item, str):
+                                    lines.append(f"  {idx}. Text: `{emph_item}`")
+                                else:
+                                    lines.append(f"  {idx}. Text: `{str(emph_item)}`")
                         else:
                             lines.append(f"- **Emphasis Spans:** None")
                         lines.append("")
@@ -506,17 +598,14 @@ def generate_workflow_documentation(
                             pos_y = body_position.get("y", "N/A")
                             lines.append(f"- **Position:** x={pos_x}, y={pos_y}")
                         
-                        if body_emphasis:
+                        if body_emphasis and isinstance(body_emphasis, list):
                             lines.append(f"- **Emphasis Spans:** {len(body_emphasis)}")
                             lines.append("")
-                            for idx, emph in enumerate(body_emphasis, 1):
-                                emph_text = emph.get("text", "")
-                                start_idx = emph.get("start_index", "N/A")
-                                end_idx = emph.get("end_index", "N/A")
-                                styles = ", ".join(emph.get("styles", []))
-                                lines.append(f"  {idx}. Text: `{emph_text}`")
-                                lines.append(f"     Indices: {start_idx}-{end_idx}")
-                                lines.append(f"     Styles: `{styles}`")
+                            for idx, emph_item in enumerate(body_emphasis, 1):
+                                if isinstance(emph_item, str):
+                                    lines.append(f"  {idx}. Text: `{emph_item}`")
+                                else:
+                                    lines.append(f"  {idx}. Text: `{str(emph_item)}`")
                         else:
                             lines.append(f"- **Emphasis Spans:** None")
                         lines.append("")
@@ -569,6 +658,77 @@ def generate_workflow_documentation(
             
             lines.append("---")
             lines.append("")
+    
+    # Template Selection System (Global Section)
+    lines.append("## Template Selection System")
+    lines.append("")
+    lines.append("This section provides an overview of the template-based architecture and template selection results.")
+    lines.append("")
+    
+    # Check if any templates were selected
+    all_template_stats = []
+    all_template_ids = set()
+    for result in all_copy_results:
+        narrative_payload = result.get("narrative_payload", {})
+        
+        # Ensure narrative_payload is a dict
+        if not isinstance(narrative_payload, dict):
+            if isinstance(narrative_payload, str):
+                try:
+                    import json
+                    narrative_payload = json.loads(narrative_payload)
+                except (json.JSONDecodeError, ValueError):
+                    narrative_payload = {}
+            else:
+                narrative_payload = {}
+        
+        template_stats = narrative_payload.get("_template_selection_stats", {})
+        if template_stats and isinstance(template_stats, dict):
+            all_template_stats.append(template_stats)
+        
+        slides = narrative_payload.get("slides", [])
+        if isinstance(slides, list):
+            for slide in slides:
+                if isinstance(slide, dict):
+                    template_id = slide.get("template_id")
+                    if template_id:
+                        all_template_ids.add(template_id)
+    
+    if all_template_stats or all_template_ids:
+        lines.append("### Overall Template Selection Statistics")
+        lines.append("")
+        if all_template_stats:
+            total_slides = sum(s.get("total_slides", 0) for s in all_template_stats)
+            total_selected = sum(s.get("templates_selected", 0) for s in all_template_stats)
+            total_missing = sum(s.get("templates_missing", 0) for s in all_template_stats)
+            all_confidences = []
+            for stats in all_template_stats:
+                if stats.get("avg_confidence", 0) > 0:
+                    all_confidences.append(stats["avg_confidence"])
+            avg_confidence = sum(all_confidences) / len(all_confidences) if all_confidences else 0.0
+            
+            lines.append(f"- **Total Slides Processed:** {total_slides}")
+            lines.append(f"- **Templates Successfully Selected:** {total_selected}")
+            if total_missing > 0:
+                lines.append(f"- **Templates Missing:** {total_missing} ⚠️")
+                lines.append(f"- **Success Rate:** {(total_selected / total_slides * 100):.1f}%")
+            if avg_confidence > 0:
+                lines.append(f"- **Average Confidence:** {avg_confidence:.2f}")
+            if all_template_ids:
+                lines.append(f"- **Unique Templates Used:** {len(all_template_ids)}")
+                lines.append(f"- **Template IDs:** {', '.join(sorted(all_template_ids))}")
+        lines.append("")
+    
+    lines.append("### Template System Architecture")
+    lines.append("")
+    lines.append("The template-based architecture uses semantic analysis to select appropriate textual templates for each slide:")
+    lines.append("")
+    lines.append("1. **Narrative Architect** generates narrative structure with `template_type` and `value_subtype`")
+    lines.append("2. **Template Selector** uses embeddings (or fallback method) to select specific `template_id`")
+    lines.append("3. **Copywriter** uses `template_id` and template structures to generate copy")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
     
     # LLM Events & Responses
     lines.append("## LLM Events & Responses")
@@ -785,6 +945,15 @@ def print_brief_details(brief: CoherenceBrief, phase: str = "") -> None:
         if brief.narrative_structure:
             slides_count = len(brief.narrative_structure.get('slides', []))
             print(f"   • Slides Defined: {slides_count}")
+            slides = brief.narrative_structure.get("slides", [])
+            if slides:
+                print(f"\n📋 TEMPLATES:")
+                for slide in slides:
+                    slide_num = slide.get("slide_number", "?")
+                    template_id = slide.get("template_id", "N/A")
+                    template_type = slide.get("template_type", "N/A")
+                    confidence = slide.get("template_confidence", 0.0)
+                    print(f"   • Slide {slide_num}: {template_id} ({template_type}, confidence={confidence:.2f})")
         if brief.copy_guidelines:
             print(f"   • Copy Guidelines: ✓")
         if brief.cta_guidelines:
@@ -1367,6 +1536,73 @@ def main() -> int:
 
     print(f"   ✓ Prompt found: {narrative_prompt_key} (version {narrative_prompt_data.get('version', 'N/A')})")
 
+    # Verify Template System
+    print("\n8a. Verifying Template System...")
+    from src.templates.library import TemplateLibrary
+    from src.templates.selector import TemplateSelector
+    
+    try:
+        # Test Template Library
+        template_library = TemplateLibrary()
+        total_templates = len(template_library.templates)
+        print(f"   ✓ Template Library loaded: {total_templates} templates available")
+        
+        # Show template breakdown by type
+        template_types = {}
+        for template in template_library.templates.values():
+            template_type = template.module_type
+            template_types[template_type] = template_types.get(template_type, 0) + 1
+        
+        print(f"   📋 Template breakdown by type:")
+        for template_type, count in sorted(template_types.items()):
+            print(f"      • {template_type}: {count} templates")
+        
+        # Test Template Selector
+        print(f"\n   🔍 Initializing Template Selector...")
+        template_selector = TemplateSelector()
+        
+        # Check if embeddings are available
+        try:
+            from sentence_transformers import SentenceTransformer
+            embeddings_available = True
+            print(f"   ✓ Embeddings available: {template_selector.model_name}")
+            if template_selector.model:
+                print(f"   ✓ Embeddings model loaded successfully")
+                print(f"   ✓ Template embeddings pre-computed: {len(template_selector.template_embeddings_cache)} templates")
+            else:
+                print(f"   ⚠️  Embeddings model not loaded (using fallback method)")
+                embeddings_available = False
+        except ImportError:
+            embeddings_available = False
+            print(f"   ⚠️  sentence-transformers not installed (using fallback method)")
+            print(f"   💡 For better template selection, install: pip install sentence-transformers")
+        
+        # Test template selection with a simple example
+        print(f"\n   🧪 Testing template selection...")
+        try:
+            test_template_id, test_justification, test_confidence = template_selector.select_template(
+                template_type="hook",
+                value_subtype=None,
+                purpose="Grab attention with a provocative question",
+                copy_direction="Create curiosity about a common problem professionals face",
+                key_elements=["certificates", "skills"],
+                persona="Professional developers",
+                tone="professional",
+                platform="linkedin",
+            )
+            print(f"   ✓ Template selection working: {test_template_id} (confidence: {test_confidence:.2f})")
+            print(f"      Justification: {test_justification[:100]}..." if len(test_justification) > 100 else f"      Justification: {test_justification}")
+        except Exception as test_error:
+            print(f"   ⚠️  Template selection test failed: {test_error}")
+            print(f"   💡 Template selection may not work correctly")
+        
+    except Exception as template_error:
+        print(f"   ❌ ERROR: Template system verification failed: {template_error}")
+        print(f"   💡 This may cause issues in template selection")
+        import traceback
+        if os.getenv("DEBUG", "").lower() in ("1", "true", "yes"):
+            traceback.print_exc()
+
     # Create Narrative Architect
     print("\n9. Creating Narrative Architect...")
     architect = NarrativeArchitect(llm_client=llm_client, logger=logger)
@@ -1406,7 +1642,8 @@ def main() -> int:
             
             # Print narrative structure summary
             slides = narrative_payload.get("slides", [])
-            pacing = narrative_payload.get("pacing", "N/A")
+            # Support both "pacing" (normalized) and "narrative_pacing" (raw response)
+            pacing = narrative_payload.get("narrative_pacing") or narrative_payload.get("pacing", "N/A")
             transition = narrative_payload.get("transition_style", "N/A")
             print(f"\n   📖 NARRATIVE STRUCTURE:")
             print(f"      • Slides: {len(slides)}")
@@ -1415,6 +1652,62 @@ def main() -> int:
             if narrative_payload.get("arc_refined"):
                 arc = narrative_payload.get("arc_refined", "")
                 print(f"      • Arc Refined: {arc[:100]}..." if len(arc) > 100 else f"      • Arc Refined: {arc}")
+            print(f"\n   🎯 TEMPLATE SELECTION RESULTS:")
+            templates_by_type = {}
+            template_selection_stats = {
+                "total_slides": len(slides),
+                "templates_selected": 0,
+                "templates_missing": 0,
+                "avg_confidence": 0.0,
+                "method": "unknown",
+            }
+            
+            confidences = []
+            for slide in slides:
+                slide_num = slide.get("slide_number")
+                template_type = slide.get("template_type", "unknown")
+                value_subtype = slide.get("value_subtype")
+                template_id = slide.get("template_id")
+                template_confidence = slide.get("template_confidence", 0.0)
+                template_justification = slide.get("template_justification", "")
+                
+                if template_type not in templates_by_type:
+                    templates_by_type[template_type] = []
+                
+                if template_id:
+                    template_selection_stats["templates_selected"] += 1
+                    confidences.append(template_confidence)
+                    templates_by_type[template_type].append({
+                        "slide_num": slide_num,
+                        "template_id": template_id,
+                        "confidence": template_confidence,
+                        "value_subtype": value_subtype,
+                    })
+                    template_type_display = f"{template_type}/{value_subtype}" if value_subtype else template_type
+                    print(f"      ✓ Slide {slide_num} ({template_type_display}): {template_id} (confidence: {template_confidence:.2f})")
+                    if template_justification:
+                        justification_preview = template_justification[:150] + "..." if len(template_justification) > 150 else template_justification
+                        print(f"        └─ {justification_preview}")
+                else:
+                    template_selection_stats["templates_missing"] += 1
+                    template_type_display = f"{template_type}/{value_subtype}" if value_subtype else template_type
+                    print(f"      ✗ Slide {slide_num} ({template_type_display}): (no template selected)")
+            
+            # Calculate average confidence
+            if confidences:
+                template_selection_stats["avg_confidence"] = sum(confidences) / len(confidences)
+            
+            # Show summary
+            print(f"\n   📊 Template Selection Summary:")
+            print(f"      • Total slides: {template_selection_stats['total_slides']}")
+            print(f"      • Templates selected: {template_selection_stats['templates_selected']}")
+            if template_selection_stats["templates_missing"] > 0:
+                print(f"      • Templates missing: {template_selection_stats['templates_missing']} ⚠️")
+            if template_selection_stats["avg_confidence"] > 0:
+                print(f"      • Average confidence: {template_selection_stats['avg_confidence']:.2f}")
+            
+            # Store stats for later use
+            narrative_payload["_template_selection_stats"] = template_selection_stats
             
             # Print LLM metrics for this narrative generation
             print_llm_metrics(logger, phase="Phase 3", context=brief.post_id)
@@ -1438,7 +1731,37 @@ def main() -> int:
 
         except Exception as exc:
             error_msg = str(exc)
-            print(f"   ⚠️  WARNING: {error_msg}")
+            error_type = type(exc).__name__
+            print(f"   ❌ ERROR: {error_type}: {error_msg}")
+            
+            # Try to get more context about the error
+            import traceback
+            if isinstance(exc, ValueError):
+                # For validation errors, try to show what was expected vs received
+                if "Missing required keys" in error_msg or "Invalid item" in error_msg:
+                    print(f"   📋 This appears to be a validation error.")
+                    print(f"   💡 The LLM response may not match the expected structure.")
+                    print(f"   🔍 Check the debug output directory for raw response files.")
+                    
+                    # Try to load and show raw response if available
+                    debug_dir = article_output_dir / brief.post_id / "debug"
+                    if debug_dir.exists():
+                        raw_response_files = list(debug_dir.glob("raw_response_*.txt"))
+                        if raw_response_files:
+                            latest_response = max(raw_response_files, key=lambda p: p.stat().st_mtime)
+                            print(f"   📄 Latest raw response: {latest_response}")
+                            try:
+                                response_content = latest_response.read_text(encoding="utf-8")[:1000]
+                                print(f"   📝 Response preview (first 1000 chars):")
+                                print(f"   {response_content}")
+                            except Exception:
+                                pass
+            
+            # Print traceback for debugging if needed
+            if os.getenv("DEBUG", "").lower() in ("1", "true", "yes"):
+                print(f"   🔍 Full traceback:")
+                traceback.print_exc()
+            
             print(f"   ℹ️  Continuing with next brief...")
             # Continue instead of returning 1
 
@@ -1484,6 +1807,11 @@ def main() -> int:
             logger.set_context(post_id=brief.post_id)
 
             print(f"\n      Generating copy for all {len(slides)} slides...")
+
+            for slide_info in slides:
+                template_id = slide_info.get("template_id")
+                if not template_id:
+                    print(f"      ⚠️  WARNING: Slide {slide_info.get('slide_number')} missing template_id before copywriting")
 
             # Capture warnings and display them as informational messages
             with warnings.catch_warnings(record=True) as w:
@@ -1612,7 +1940,7 @@ def main() -> int:
 
         print(f"      ✓ {len(post_copy_results)} slide(s) processed for {brief.post_id}")
 
-    total_slides = sum(len(r["slide_contents"]) for r in all_copy_results)
+    total_slides = sum(len(r.get("slide_contents", [])) if isinstance(r.get("slide_contents"), list) else 0 for r in all_copy_results)
     print(f"\n   ✓ {total_slides} total slide(s) processed successfully")
 
     # =====================================================================
@@ -1642,6 +1970,48 @@ def main() -> int:
     for idx, result in enumerate(all_copy_results, 1):
         slides_count = len(result["slide_contents"])
         print(f"       - Post {idx}: {slides_count} slides")
+
+    print(f"\n   Template Selection System:")
+    
+    # Collect template statistics
+    template_confidences = []
+    template_ids = set()
+    template_selection_stats_all = {
+        "total_slides": 0,
+        "templates_selected": 0,
+        "templates_missing": 0,
+        "unique_templates": set(),
+    }
+    
+    for result in narrative_results:
+        slides = result["narrative_payload"].get("slides", [])
+        template_stats = result["narrative_payload"].get("_template_selection_stats", {})
+        
+        template_selection_stats_all["total_slides"] += len(slides)
+        template_selection_stats_all["templates_selected"] += template_stats.get("templates_selected", 0)
+        template_selection_stats_all["templates_missing"] += template_stats.get("templates_missing", 0)
+        
+        for slide in slides:
+            template_id = slide.get("template_id")
+            if template_id:
+                template_ids.add(template_id)
+                template_confidences.append(slide.get("template_confidence", 0.0))
+    
+    template_selection_stats_all["unique_templates"] = template_ids
+    avg_confidence = sum(template_confidences) / len(template_confidences) if template_confidences else 0.0
+    
+    print(f"     ✓ Total slides: {template_selection_stats_all['total_slides']}")
+    print(f"     ✓ Templates selected: {template_selection_stats_all['templates_selected']}")
+    if template_selection_stats_all["templates_missing"] > 0:
+        success_rate = (template_selection_stats_all["templates_selected"] / template_selection_stats_all["total_slides"] * 100) if template_selection_stats_all["total_slides"] > 0 else 0.0
+        print(f"     ⚠️  Templates missing: {template_selection_stats_all['templates_missing']} (success rate: {success_rate:.1f}%)")
+    else:
+        print(f"     ✓ All slides have templates selected")
+    print(f"     ✓ Unique templates used: {len(template_selection_stats_all['unique_templates'])}")
+    if avg_confidence > 0:
+        print(f"     ✓ Average confidence: {avg_confidence:.2f}")
+    if template_ids:
+        print(f"     ✓ Template IDs: {', '.join(sorted(list(template_ids))[:10])}{'...' if len(template_ids) > 10 else ''}")
 
     # Validate coherence brief evolution
     print("\n15. Validating coherence brief evolution...")

@@ -44,7 +44,7 @@ class TemplateLibrary:
         Get template by ID.
         
         Args:
-            template_id: Template ID (ex: "H_PERGUNTA")
+            template_id: Template ID (ex: "H_QUESTION")
             
         Returns:
             TextualTemplate if found, None otherwise
@@ -92,7 +92,7 @@ class TemplateLibrary:
             return "- (no templates selected)"
         
         lines = []
-        lines.append("## TEMPLATES TEXTUAIS SELECIONADOS\n")
+        lines.append("## SELECTED TEXTUAL TEMPLATES\n")
         
         # Group by module type for better organization
         by_type: Dict[str, List[TextualTemplate]] = {}
@@ -104,9 +104,9 @@ class TemplateLibrary:
         # Output templates grouped by type
         type_names = {
             "hook": "HOOK",
-            "insight": "VALOR: Insight/Dado",
-            "solution": "VALOR: Solução",
-            "example": "VALOR: Exemplo",
+            "insight": "VALUE: Insight/Data",
+            "solution": "VALUE: Solution",
+            "example": "VALUE: Example",
             "cta": "CTA",
         }
         
@@ -119,10 +119,10 @@ class TemplateLibrary:
             
             for template in by_type[module_type]:
                 lines.append(f"- **{template.id}**: {template.function}")
-                lines.append(f"  - Estrutura: `{template.structure}`")
-                lines.append(f"  - Tamanho: {template.length_range[0]}-{template.length_range[1]} caracteres")
-                lines.append(f"  - Tom: {template.tone}")
-                lines.append(f"  - Exemplo: \"{template.example}\"")
+                lines.append(f"  - Structure: `{template.structure}`")
+                lines.append(f"  - Length: {template.length_range[0]}-{template.length_range[1]} characters")
+                lines.append(f"  - Tone: {template.tone}")
+                lines.append(f"  - Example: \"{template.example}\"")
                 lines.append("")
         
         return "\n".join(lines)

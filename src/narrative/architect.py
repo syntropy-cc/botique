@@ -133,31 +133,121 @@ class NarrativeArchitect:
             prompt = prompt.replace(placeholder, str(value))
         
         # Call LLM (logging is handled automatically by HttpLLMClient if logger is provided)
-        raw_response = self.llm.generate(
-            prompt,
-            context=context,
-            temperature=0.2,
-            max_tokens=DEEPSEEK_MAX_TOKENS,
-            prompt_key=prompt_key,
-            template=template_text,
-        )
+        # Save raw response path for debugging (initialize outside try to access in except)
+        raw_response_path = None
+        raw_response = None
+        
+        try:
+            raw_response = self.llm.generate(
+                prompt,
+                context=context,
+                temperature=0.2,
+                max_tokens=DEEPSEEK_MAX_TOKENS,
+                prompt_key=prompt_key,
+                template=template_text,
+            )
+            
+            # Log raw response for debugging (truncated if too long)
+            import logging
+            logger_debug = logging.getLogger(__name__)
+            response_preview = raw_response[:500] if len(raw_response) > 500 else raw_response
+            logger_debug.info(f"Narrative Architect raw response preview (first 500 chars): {response_preview}")
+            
+            # Also save to file explicitly for easier debugging (in addition to HttpLLMClient auto-save)
+            try:
+                from pathlib import Path
+                from ..core.config import OUTPUT_DIR
+                debug_dir = OUTPUT_DIR / context / "debug"
+                debug_dir.mkdir(parents=True, exist_ok=True)
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+                raw_response_path = debug_dir / f"narrative_architect_response_{timestamp}.json"
+                raw_response_path.write_text(raw_response, encoding="utf-8")
+                logger_debug.info(f"Raw response saved to: {raw_response_path}")
+            except Exception as save_error:
+                logger_debug.warning(f"Could not save raw response to file: {save_error}")
+            
+            # Try to parse JSON to see structure before validation
+            try:
+                import json
+                parsed_preview = json.loads(raw_response)
+                logger_debug.info(f"Parsed JSON has keys: {list(parsed_preview.keys())}")
+                if "slides" in parsed_preview and len(parsed_preview["slides"]) > 0:
+                    first_slide_keys = list(parsed_preview["slides"][0].keys())
+                    logger_debug.info(f"First slide has keys: {first_slide_keys}")
+                    logger_debug.info(f"First slide content: {json.dumps(parsed_preview['slides'][0], indent=2)[:1000]}")
+                else:
+                    logger_debug.warning(f"No slides found in response or slides array is empty")
+                    if "slides" in parsed_preview:
+                        logger_debug.warning(f"Slides array length: {len(parsed_preview['slides'])}")
+            except Exception as parse_error:
+                logger_debug.warning(f"Could not parse JSON preview: {parse_error}")
+        except Exception as llm_error:
+            # If LLM call itself fails, propagate but include context
+            import logging
+            logger_debug = logging.getLogger(__name__)
+            logger_debug.error(f"LLM call failed for {brief.post_id}: {llm_error}")
+            raise
         
         # Validate response structure
         try:
             payload = self._validate_response(raw_response, brief)
         except ValueError as e:
+            # Log detailed validation error including raw response snippet
+            import logging
+            logger_debug = logging.getLogger(__name__)
+            error_msg = str(e)
+            logger_debug.error(f"Narrative Architect validation failed for {brief.post_id}: {error_msg}")
+            
+            # Show saved file path if available
+            if 'raw_response_path' in locals() and raw_response_path and raw_response_path.exists():
+                logger_debug.error(f"Full raw response saved to: {raw_response_path}")
+            
+            # Try to show what we got instead of what we expected
+            if 'raw_response' in locals():
+                try:
+                    import json
+                    parsed_error = json.loads(raw_response)
+                    logger_debug.error(f"Parsed response top-level keys: {list(parsed_error.keys())}")
+                    
+                    if "slides" in parsed_error:
+                        if len(parsed_error["slides"]) > 0:
+                            first_slide = parsed_error["slides"][0]
+                            first_slide_keys = list(first_slide.keys())
+                            logger_debug.error(f"First slide received keys: {first_slide_keys}")
+                            logger_debug.error(f"Expected keys: template_type, value_subtype, purpose, target_emotions, copy_direction, visual_direction, key_elements, insights_referenced, transition_to_next")
+                            logger_debug.error(f"First slide content: {json.dumps(first_slide, indent=2, ensure_ascii=False)}")
+                            
+                            # Show what's missing
+                            expected_keys = ["template_type", "value_subtype", "purpose", "target_emotions", "copy_direction", "visual_direction", "key_elements", "insights_referenced", "transition_to_next"]
+                            missing_keys = [key for key in expected_keys if key not in first_slide_keys]
+                            if missing_keys:
+                                logger_debug.error(f"Missing keys in first slide: {missing_keys}")
+                        else:
+                            logger_debug.error(f"Slides array is empty!")
+                    else:
+                        logger_debug.error(f"No 'slides' key found in response. Available keys: {list(parsed_error.keys())}")
+                    
+                    # Show raw response snippet for debugging
+                    logger_debug.error(f"Raw response snippet (first 1500 chars): {raw_response[:1500]}")
+                except Exception as parse_exc:
+                    logger_debug.error(f"Could not parse response for error details: {parse_exc}")
+                    logger_debug.error(f"Raw response (first 1000 chars): {raw_response[:1000]}")
+            
             # Log validation error using SQL logger if available
             if self.logger:
                 try:
                     # Get trace_id from context if available
                     trace_id = getattr(self.logger, 'current_trace_id', None) or getattr(self.logger, 'session_id', None)
                     if trace_id:
+                        # Include raw response snippet in metadata
+                        response_snippet = raw_response[:1000] if len(raw_response) > 1000 else raw_response
                         self.logger.log_step_event(
                             trace_id=trace_id,
                             name=f"narrative_architect_validation_error_{brief.post_id}",
                             input_text=f"Validating narrative structure for {brief.post_id}",
-                            output_text=None,
-                            error=str(e),
+                            output_text=response_snippet,
+                            error=error_msg,
                             status="error",
                             type="postprocess",
                             metadata={
@@ -165,6 +255,7 @@ class NarrativeArchitect:
                                 "idea_id": brief.idea_id,
                                 "platform": brief.platform,
                                 "format": brief.format,
+                                "error_detail": error_msg,
                             },
                         )
                 except Exception:
@@ -342,7 +433,7 @@ class NarrativeArchitect:
         Raises:
             ValueError: If validation fails
         """
-        # Structural validation
+        # Structural validation - strict validation requiring template_type and value_subtype
         payload = validate_llm_json_response(
             raw_response=raw_response,
             top_level_keys=[
@@ -367,6 +458,20 @@ class NarrativeArchitect:
                 ],
             },
         )
+        
+        # Ensure optional fields have defaults if missing (but structure validation should catch required fields)
+        slides = payload.get("slides", [])
+        for idx, slide in enumerate(slides):
+            # Ensure lists are properly initialized
+            if "key_elements" not in slide:
+                slide["key_elements"] = []
+            if "insights_referenced" not in slide:
+                slide["insights_referenced"] = []
+            if "target_emotions" not in slide:
+                slide["target_emotions"] = []
+            # transition_to_next is optional (can be null for last slide)
+            if "transition_to_next" not in slide:
+                slide["transition_to_next"] = None
         
         # Validate copy_direction and visual_direction are non-empty strings
         for idx, slide in enumerate(payload["slides"]):
@@ -463,15 +568,50 @@ class NarrativeArchitect:
                 )
         
         # Validate first slide is hook
-        if slides and slides[0].get("module_type") != "hook":
-            raise ValueError("First slide must have module_type='hook'")
+        if slides and slides[0].get("template_type") != "hook":
+            raise ValueError("First slide must have template_type='hook'")
         
         # Validate last slide is cta if required
-        if "professional_cta" in brief.required_elements:
-            if not slides or slides[-1].get("module_type") != "cta":
+        if "professional_cta" in brief.required_elements or "cta" in brief.required_elements:
+            if not slides or slides[-1].get("template_type") != "cta":
                 raise ValueError(
-                    "Last slide must have module_type='cta' when professional_cta is required"
+                    "Last slide must have template_type='cta' when professional_cta or cta is required"
                 )
+        
+        # Validate template_type and value_subtype for each slide
+        for idx, slide in enumerate(slides):
+            template_type = slide.get("template_type")
+            value_subtype = slide.get("value_subtype")
+            
+            # Validate template_type is one of the valid types
+            valid_template_types = {"hook", "transition", "value", "cta"}
+            if template_type not in valid_template_types:
+                raise ValueError(
+                    f"Slide {idx + 1}: Invalid template_type '{template_type}'. "
+                    f"Must be one of {valid_template_types}"
+                )
+            
+            # Validate value_subtype rules
+            if template_type == "value":
+                # Value slides must have value_subtype specified
+                valid_value_subtypes = {"data", "insight", "solution", "example"}
+                if not value_subtype:
+                    raise ValueError(
+                        f"Slide {idx + 1}: template_type='value' requires value_subtype "
+                        f"(must be one of {valid_value_subtypes})"
+                    )
+                if value_subtype not in valid_value_subtypes:
+                    raise ValueError(
+                        f"Slide {idx + 1}: Invalid value_subtype '{value_subtype}' for template_type='value'. "
+                        f"Must be one of {valid_value_subtypes}"
+                    )
+            else:
+                # Hook, transition, and cta slides must have value_subtype = null
+                if value_subtype is not None:
+                    raise ValueError(
+                        f"Slide {idx + 1}: template_type='{template_type}' must have value_subtype=null, "
+                        f"got '{value_subtype}'"
+                    )
         
         # Validate all insights are referenced
         insights_used = set(brief.key_insights_used or [])

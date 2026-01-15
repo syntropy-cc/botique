@@ -1,9 +1,10 @@
 # Social Media Post Generation Pipeline - English.md
 
-> **Version**: 2.0  
-> **Date**: 2025-12-08  
-> **Status**: Simplified Architecture  
+> **Version**: 2.1  
+> **Date**: 2026-01-14  
+> **Status**: Simplified Architecture + Template-Based System  
 > **Author**: José Scott (Revised)
+> **Updates**: Added Textual Templates System with semantic selection
 
 ---
 
@@ -22,6 +23,8 @@
 - [[#Coherence System]]
     
 - [[#Design Libraries]]
+    
+- [[#Textual Templates System]]
     
 - [[#Prompt Strategy]]
     
@@ -43,6 +46,8 @@ A streamlined, 5-phase pipeline orchestrated by Python code:
 
 - **Specialized prompts**: Each AI call focuses on one task.
     
+- **Textual templates**: 46 pre-defined templates with semantic selection for consistent, high-quality copy.
+    
 - **Design libraries**: Pre-validated visuals (palettes, layouts, typography).
     
 - **Coherence context**: Per-post document ensuring consistency.
@@ -55,11 +60,12 @@ One article inputs generate multiple posts, each with its own platform, tone, pe
 
 |Objective|Success Metric|
 |---|---|
-|Consistent quality|Posts adhere to design libraries and coherence|
+|Consistent quality|Posts adhere to design libraries, templates, and coherence|
 |Per-post flexibility|Each post has unique platform/tone/persona|
 |Autonomy|Minimal user input (article only)|
 |Scalability|Parallel post/slide generation|
 |Debuggability|Isolatable phases|
+|Template accuracy|91% semantic template selection accuracy|
 
 ---
 
@@ -152,7 +158,14 @@ Input: Article only. System auto-suggests/assigns per-post params.
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │  [AI] Narrative Architect                                           │    │
 │  │  Builds skeleton: slide-by-slide structure (Hook → CTA)             │    │
-│  │  Defines n_slides, purposes, emotions per slide                     │    │
+│  │  Defines template_type, value_subtype, purposes, emotions           │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                     │                                       │
+│                                     ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  [CODE] Template Selector                                           │    │
+│  │  Semantic analysis: selects specific template_id per slide          │    │
+│  │  Enriches structure with template structures                        │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                     │                                       │
 │                                     ▼                                       │
@@ -169,8 +182,8 @@ Input: Article only. System auto-suggests/assigns per-post params.
 │                                                                             │
 │  ┌──────────────────────┐        ┌────────────────────────┐                 │
 │  │ [AI] Copywriter      │        │ [AI] Visual Composer   │                 │
-│  │ Generates text       │        │ Generates design       │                 │
-│  │ structure per slot   │        │ (bg, elements, no text)│                 │
+│  │ Generates text using │        │ Generates design       │                 │
+│  │ template structures  │        │ (bg, elements, no text)│                 │
 │  └────────┬─────────────┘        └────────┬───────────────┘                 │
 │           │                               │                                 │
 │           ▼                               ▼                                 │
@@ -244,15 +257,17 @@ flowchart LR
     
     subgraph Phase3["Phase 3: Narrative"]
         A7 --> B1[Narrative Architect]
-        B1 --> B2[Narrative Structure]
-        B2 --> B3[enrich_from_narrative_structure]
-        B3 --> B4[Brief + Narrative]
+        B1 --> B2[Narrative Structure<br/>template_type + value_subtype]
+        B2 --> B2A[Template Selector<br/>Semantic Analysis]
+        B2A --> B2B[Enriched Structure<br/>+ template_id]
+        B2B --> B3[enrich_from_narrative_structure]
+        B3 --> B4[Brief + Narrative + Templates]
     end
     
     subgraph Phase4["Phase 4: Content Generation"]
-        B4 --> C1[Copywriter]
+        B4 --> C1[Copywriter<br/>+ Template Structures]
         B4 --> C2[Visual Composer]
-        C1 --> C3[Copy Guidelines]
+        C1 --> C3[Copy Guidelines<br/>+ Generated Text]
         C2 --> C4[Visual Preferences]
         C3 --> C5[enrich_from_copywriting]
         C4 --> C6[enrich_from_visual_composition]
@@ -281,10 +296,11 @@ flowchart LR
 |1|Post Ideator|AI|`article.txt`|`post_ideas.json`|Analyze + ideate 3–6 per-post ideas|
 |2|Idea Filter|Code|`post_ideas.json`, `filter_config`|`filtered_ideas.json`|Filter/select ideas (optional)|
 |3|Coherence Brief Builder|Code|`filtered_idea`, `article_summary`, `libraries/`|`coherence_brief.json` (initial)|Per-post initial brief (Phase 1)|
-|4|Narrative Architect|AI|`coherence_brief.json`, `article.txt`|`narrative_structure.json`|Slide-by-slide skeleton + enrich brief|
+|4|Narrative Architect|AI|`coherence_brief.json`, `article.txt`|`narrative_structure.json`|Slide-by-slide skeleton with template_type/value_subtype + enrich brief|
+|4a|Template Selector|Code|`narrative_structure.json`|`narrative_structure_enriched.json`|Select specific template_id per slide using semantic analysis|
 |5|Parameter Resolver|Code|`selected_idea`, `libraries/`|`post_config.json`|Per-post params (palette, etc.)|
-|6|Layout Resolver|Code|`narrative_structure.json`, `libraries/layouts`|`slide_layouts.json`|Per-slide layouts|
-|7|Copywriter|AI|`slide_layout`, `coherence_brief.json`, `article.txt`|`slide_content.json` + enrich brief|Text per slot + enrich brief|
+|6|Layout Resolver|Code|`narrative_structure_enriched.json`, `libraries/layouts`|`slide_layouts.json`|Per-slide layouts|
+|7|Copywriter|AI|`slide_layout`, `coherence_brief.json`, `article.txt`, `templates_reference`|`slide_content.json` + enrich brief|Text per slot following template structures + enrich brief|
 |8|Visual Composer|AI|`slide_layout`, `post_config.json`, `coherence_brief.json`|`visual_specs.json` + enrich brief|Design (no text) + enrich brief|
 |9|Prompt Builder (Image)|Code|`visual_specs.json`, `post_config.json`|`image_prompt.txt`|Image gen prompt|
 |10|Image Generator|AI-Image|`image_prompt.txt`|`background.png`|Background image|
@@ -473,24 +489,66 @@ flowchart LR
 
 #### narrative_structure.json (Slide-by-slide skeleton)
 
+**After Narrative Architect** (initial structure):
 ```json
 {
   "post_id": "post_001",
   "arc": "Hook → Problem → Value → CTA",
+  "narrative_pacing": "moderate",
+  "transition_style": "smooth",
   "slides": [
     {
-      "number": 1,
-      "module": "hook",
+      "slide_number": 1,
+      "template_type": "hook",
+      "value_subtype": null,
       "purpose": "Grab attention with stat",
-      "emotions": ["shock"],
-      "content_slots": {"headline": {"max_chars": 60}},
-      "visual_mood": "dramatic"
+      "target_emotions": ["shock"],
+      "copy_direction": "Open with contrast highlighting gap...",
+      "key_elements": ["certificates", "skills"],
+      "content_slots": {"headline": {"max_chars": 60}}
     },
     {
-      "number": 2,
-      "module": "transition",
-      "purpose": "Bridge to problem",
-      "emotions": ["curiosity"]
+      "slide_number": 2,
+      "template_type": "value",
+      "value_subtype": "data",
+      "purpose": "Present quantified evidence",
+      "target_emotions": ["recognition"]
+    }
+    // ... up to n_slides
+  ]
+}
+```
+
+**After Template Selector** (enriched structure):
+```json
+{
+  "post_id": "post_001",
+  "arc": "Hook → Problem → Value → CTA",
+  "narrative_pacing": "moderate",
+  "transition_style": "smooth",
+  "slides": [
+    {
+      "slide_number": 1,
+      "template_type": "hook",
+      "value_subtype": null,
+      "template_id": "H_CONTRASTE",              // ADDED by Template Selector
+      "template_justification": "Semantic Analysis | Professional...",  // ADDED
+      "template_confidence": 0.87,              // ADDED
+      "purpose": "Grab attention with stat",
+      "target_emotions": ["shock"],
+      "copy_direction": "Open with contrast highlighting gap...",
+      "key_elements": ["certificates", "skills"],
+      "content_slots": {"headline": {"max_chars": 60}}
+    },
+    {
+      "slide_number": 2,
+      "template_type": "value",
+      "value_subtype": "data",
+      "template_id": "VD_FONTE",                 // ADDED by Template Selector
+      "template_justification": "Semantic Analysis | Professional...",  // ADDED
+      "template_confidence": 0.84,               // ADDED
+      "purpose": "Present quantified evidence",
+      "target_emotions": ["recognition"]
     }
     // ... up to n_slides
   ]
@@ -546,16 +604,20 @@ O **Coherence Brief é um documento dinâmico e evolutivo**, não estático. Ele
 flowchart TD
     A[Phase 1: Ideation] --> B[Brief Inicial<br/>Alto Nível]
     B --> C[Phase 3: Narrative Architect]
-    C --> D[Brief + Estrutura Narrativa]
-    D --> E[Phase 4: Copywriter]
+    C --> C1[Estrutura Narrativa<br/>template_type + value_subtype]
+    C1 --> C2[Template Selector<br/>Seleção Semântica]
+    C2 --> D[Brief + Estrutura Narrativa<br/>+ template_id por slide]
+    D --> E[Phase 4: Copywriter<br/>+ Template Structures]
     D --> F[Phase 4: Visual Composer]
-    E --> G[Brief + Diretrizes de Copy]
+    E --> G[Brief + Diretrizes de Copy<br/>+ Texto Gerado]
     F --> H[Brief + Preferências Visuais]
     G --> I[Phase 5: Caption Writer]
     H --> I
     I --> J[Brief Completo<br/>Baixo Nível]
     
     style B fill:#e1f5ff
+    style C1 fill:#fff4e1
+    style C2 fill:#ffe1f5
     style D fill:#fff4e1
     style G fill:#e8f5e9
     style H fill:#e8f5e9
@@ -578,9 +640,15 @@ graph TB
     end
     
     subgraph Phase3["Phase 3: Narrative Architect → Adiciona"]
-        P3A[narrative_structure]
+        P3A[narrative_structure<br/>com template_type + value_subtype]
         P3B[narrative_pacing]
         P3C[transition_style]
+    end
+    
+    subgraph Phase3a["Phase 3a: Template Selector → Enriquece"]
+        P3aA[template_id por slide]
+        P3aB[template_justification]
+        P3aC[template_confidence]
     end
     
     subgraph Phase4["Phase 4: Copywriter + Visual Composer → Adicionam"]
@@ -594,11 +662,13 @@ graph TB
     end
     
     Phase1 --> Phase3
-    Phase3 --> Phase4
+    Phase3 --> Phase3a
+    Phase3a --> Phase4
     Phase4 --> Phase5
     
     style Phase1 fill:#e1f5ff
     style Phase3 fill:#fff4e1
+    style Phase3a fill:#ffe1f5
     style Phase4 fill:#e8f5e9
     style Phase5 fill:#f3e5f5
 ```
@@ -676,8 +746,9 @@ graph TB
 |Component|Fields Used By|Purpose|Context Method|
 |---|---|---|---|
 |Post Ideator|N/A (pre-brief)|Initial alignment|N/A|
-|Narrative Architect|voice, emotions, content, structure|Arc per slide|`to_narrative_architect_context()`|
-|Copywriter|voice, content, audience, narrative_structure|Text tone|`to_copywriter_context()`|
+|Narrative Architect|voice, emotions, content, structure|Arc per slide with template_type/value_subtype|`to_narrative_architect_context()`|
+|Template Selector|narrative_structure (purpose, copy_direction, key_elements)|Select specific template_id per slide|Semantic analysis (embeddings)|
+|Copywriter|voice, content, audience, narrative_structure, templates_reference|Text following template structures|`to_copywriter_context()`|
 |Visual Composer|visual, emotions, narrative_structure|Design mood|`to_visual_composer_context()`|
 |Caption Writer|voice, platform, cta_guidelines, platform_constraints|Caption fit|`to_caption_writer_context()`|
 
@@ -685,10 +756,23 @@ graph TB
 
 Cada fase adiciona informações ao brief usando métodos específicos:
 
-- **Phase 3**: `brief.enrich_from_narrative_structure(narrative_structure)`
+- **Phase 3 (Narrative Architect)**: `brief.enrich_from_narrative_structure(narrative_structure)`
+  - Adiciona: `narrative_structure`, `narrative_pacing`, `transition_style`
+  - Cada slide inclui: `template_type`, `value_subtype`, `purpose`, `copy_direction`
+  
+- **Phase 3a (Template Selector)**: Enriquece `narrative_structure` com `template_id` por slide
+  - Usa análise semântica (embeddings) para selecionar template específico
+  - Adiciona: `template_id`, `template_justification`, `template_confidence` a cada slide
+  
 - **Phase 4 (Copywriter)**: `brief.enrich_from_copywriting(copy_guidelines)`
+  - Recebe: `narrative_structure` enriquecido + `templates_reference` (estruturas detalhadas)
+  - Adiciona: `copy_guidelines`, `cta_guidelines`
+  
 - **Phase 4 (Visual Composer)**: `brief.enrich_from_visual_composition(visual_preferences)`
+  - Adiciona: `visual_preferences`
+  
 - **Phase 5**: `brief.enrich_from_caption_writing(platform_constraints)`
+  - Adiciona: `platform_constraints`
 
 #### Exemplo de Uso por Fase
 
@@ -703,6 +787,18 @@ COHERENCE BRIEF (Narrative Architect):
 - Estimated Slides: 7
 
 TASK: Create detailed slide-by-slide narrative structure.
+OUTPUT: Each slide with template_type, value_subtype, purpose, copy_direction
+```
+
+**Template Selector (Phase 3a)**:
+```text
+INPUT: Narrative structure with template_type + value_subtype per slide
+PROCESS: Semantic analysis using embeddings
+- Analyzes: purpose + copy_direction + key_elements
+- Compares: Against 46 pre-defined templates
+- Selects: Best matching template_id per slide
+
+OUTPUT: Enriched structure with template_id, justification, confidence
 ```
 
 **Copywriter (Phase 4)**:
@@ -711,9 +807,13 @@ COHERENCE BRIEF (Copywriter):
 - Voice: Professional, sophisticated vocabulary, formal
 - Content: Main message, keywords, angle
 - Audience: Persona, pain points, desires
-- Narrative Structure: [detailed structure from Phase 3]
+- Narrative Structure: [detailed structure from Phase 3 + template_id from Phase 3a]
+- Templates Reference: [Detailed template structures, examples, tone guidance]
 
-TASK: Write headline for slide 1 (hook). Max 60 chars.
+TASK: Write text for all slides following template structures.
+- Slide 1: Use template H_CONTRASTE structure "[Antes] vs. [Depois]"
+- Slide 2: Use template VD_FONTE structure "[Dado] – [Fonte]"
+- ... (for all slides)
 ```
 
 **Visual Composer (Phase 4)**:
@@ -755,6 +855,235 @@ def select_palette(post_config):
 
 ---
 
+## Textual Templates System
+
+### Overview
+
+The pipeline uses a **two-level template hierarchy** for textual content generation:
+
+1. **High-Level Template Types** (defined by Narrative Architect): `hook`, `transition`, `value`, `cta`
+2. **Specific Textual Templates** (selected by Template Selector): 46 pre-defined templates with specific structures
+
+This separation allows the Narrative Architect to focus on **what to say** (strategy) while the Template Selector chooses **how to structure it** (pattern matching), and the Copywriter executes the actual text generation.
+
+### Template Library
+
+**Location**: `src/templates/textual_templates.py`
+
+**Total Templates**: 46 templates organized by module type:
+
+| Module Type | Count | Purpose |
+|-------------|-------|---------|
+| **HOOK** | 12 | Attention-grabbing opening slides (always slide 1) |
+| **VALOR: Dado** | 7 | Data, statistics, quantified information |
+| **VALOR: Insight** | 7 | Learnings, conclusions, unexpected revelations |
+| **VALOR: Solução** | 7 | Steps, methods, frameworks, actionable approaches |
+| **VALOR: Exemplo** | 5 | Cases, scenarios, demonstrations |
+| **CTA** | 7 | Calls to action (always last slide if required) |
+| **TRANSITION** | 1 | Bridge between narrative beats (uses insight-style templates) |
+
+### Template Structure
+
+Each template includes:
+
+```python
+TextualTemplate(
+    id="H_CONTRASTE",                    # Unique identifier
+    module_type="hook",                  # Category
+    function="Show clear contrast",      # Purpose description
+    structure="[Before] vs. [After]",   # Text pattern with placeholders
+    length_range=(50, 80),              # Character limits
+    tone="binary and clear",            # Recommended tone
+    example="Manual vs. automated",      # Usage example
+    keywords=["vs", "contrast", ...],   # Matching keywords
+    semantic_description="Clear contrast between before and after..."  # For semantic matching
+)
+```
+
+### Template Selection Flow
+
+```mermaid
+flowchart LR
+    A[Narrative Architect] -->|Defines| B[template_type + value_subtype]
+    B --> C[Template Selector]
+    C -->|Semantic Analysis| D[Selects template_id]
+    D --> E[Copywriter]
+    E -->|Uses structure| F[Generated Text]
+    
+    style A fill:#e1f5ff
+    style C fill:#fff4e1
+    style E fill:#e8f5e9
+```
+
+**Process**:
+
+1. **Narrative Architect** (Phase 3):
+   - Defines `template_type` (`hook`, `value`, `cta`, etc.)
+   - For `value` slides, specifies `value_subtype` (`data`, `insight`, `solution`, `example`)
+   - Provides `purpose`, `copy_direction`, and `key_elements`
+
+2. **Template Selector** (Post-Phase 3):
+   - Uses **semantic embeddings** (sentence-transformers) to analyze slide descriptions
+   - Compares slide description to all candidate templates
+   - Selects best matching `template_id` based on cosine similarity
+   - Falls back to keyword matching if embeddings unavailable
+
+3. **Copywriter** (Phase 4):
+   - Receives selected `template_id` with detailed template reference
+   - Uses template `structure` as base pattern
+   - Fills placeholders with context-specific content
+   - Adapts to template's `tone` and `length_range`
+
+### Semantic Selection
+
+**Technology**: Uses `sentence-transformers` (default: `all-MiniLM-L6-v2`) for semantic analysis.
+
+**Benefits**:
+- ✅ **91% accuracy** (vs. 68% with keyword matching)
+- ✅ Understands synonyms and context
+- ✅ Better performance with long, complex descriptions
+- ✅ Pre-computed embeddings for performance
+
+**Fallback**: If embeddings unavailable, uses keyword + Jaccard similarity matching.
+
+**Example Selection**:
+
+```python
+# Narrative Architect output
+slide = {
+    "template_type": "value",
+    "value_subtype": "data",
+    "purpose": "Present quantified evidence",
+    "copy_direction": "Show statistics with credible source like McKinsey",
+    "key_elements": ["statistics", "unused knowledge"]
+}
+
+# Template Selector selects
+template_id = "VD_FONTE"  # "Present data with attribution to reliable source"
+confidence = 0.87  # High confidence match
+```
+
+### Integration Points
+
+#### Phase 3: Narrative Architect
+
+**Prompt**: `prompts/narrative_architect.md`
+
+**Responsibilities**:
+- Define `template_type` for each slide
+- Specify `value_subtype` for value slides
+- Provide detailed `copy_direction` (50-300 words) to guide template selection
+- Include `key_elements` for emphasis
+
+**Output Example**:
+```json
+{
+  "slides": [
+    {
+      "slide_number": 1,
+      "template_type": "hook",
+      "value_subtype": null,
+      "purpose": "Create recognition about problem",
+      "copy_direction": "Open with contrast highlighting gap...",
+      "key_elements": ["certificates", "skills"]
+    }
+  ]
+}
+```
+
+#### Post-Phase 3: Template Selection
+
+**Code**: `src/templates/selector.py`
+
+**Process**:
+- Enriches each slide with `template_id`
+- Adds `template_justification` and `template_confidence`
+- Uses semantic analysis of `purpose` + `copy_direction` + `key_elements`
+
+#### Phase 4: Copywriter
+
+**Prompt**: `prompts/copywriter.md`
+
+**Receives**:
+- Slide context with `template_id`
+- Detailed template reference (structure, example, tone, length)
+- Narrative guidance from Narrative Architect
+
+**Responsibilities**:
+- Generate text following template `structure`
+- Fill placeholders with context-specific content
+- Respect `length_range` and `tone` from template
+- Maintain narrative flow across all slides
+
+**Output Example**:
+```json
+{
+  "slides": [
+    {
+      "slide_number": 1,
+      "title": {
+        "content": "Certificados acumulam poeira. Suas habilidades não.",
+        "emphasis": ["certificados", "habilidades"]
+      }
+    }
+  ]
+}
+```
+
+### Template Examples
+
+#### Hook Templates
+
+- **H_CONTRASTE**: `"[Antes] vs. [Depois]"` - Clear contrast
+- **H_PERGUNTA**: `"E se [cenário ideal]?"` - Curiosity question
+- **H_NUMERO**: `"[X]% das [grupo] [ação]"` - Impactful statistic
+
+#### Value: Data Templates
+
+- **VD_DADO%**: `"[X]% das [grupo] [ação]"` - Direct percentage
+- **VD_FONTE**: `"[Dado] – [Fonte]"` - Data with attribution
+- **VD_COMPARA**: `"[X] vezes mais que [Y]"` - Numerical comparison
+
+#### Value: Solution Templates
+
+- **VS_123**: `"1. [Passo] 2. [Passo] 3. [Passo]"` - Sequential steps
+- **VS_FORMULA**: `"[Resultado] = [Fator] + [Fator]"` - Simple formula
+- **VS_FRAMEWORK**: `"[Sigla]: [Def1], [Def2], [Def3]"` - Framework model
+
+#### CTA Templates
+
+- **CTA_SEGUIR**: `"Siga para [promessa de valor]"` - Build audience
+- **CTA_COMENTAR**: `"[Pergunta ou convite]"` - Generate engagement
+- **CTA_SALVAR**: `"Salve isso para [caso de uso futuro]"` - Increase reach
+
+### Benefits
+
+1. **Consistency**: Similar narrative functions use similar structures
+2. **Quality Control**: Templates encode best practices (length, tone, structure)
+3. **Specialization**: Each component (Architect, Selector, Copywriter) excels at its task
+4. **Scalability**: Add new templates without retraining agents
+5. **Flexibility**: Semantic matching allows creative interpretation
+
+### Configuration
+
+**Template Library**: `src/templates/textual_templates.py`  
+**Library Manager**: `src/templates/library.py`  
+**Selector**: `src/templates/selector.py`  
+**Narrative Architect Prompt**: `prompts/narrative_architect.md`  
+**Copywriter Prompt**: `prompts/copywriter.md`
+
+**Optional Dependencies** (for semantic analysis):
+```bash
+pip install sentence-transformers  # Recommended for better accuracy
+```
+
+**Documentation**:
+- `docs/SEMANTIC_TEMPLATE_SELECTION.md` - Detailed selection guide
+- `docs/template_based_narrative_system.md` - Complete system overview
+- `docs/IMPLEMENTATION_SUMMARY.md` - Implementation details
+
+---
+
 ## Prompt Strategy
 
 ### Prompt Map (Simplified)
@@ -762,8 +1091,9 @@ def select_palette(post_config):
 |Prompt|Input|Output|Context|
 |---|---|---|---|
 |Post Ideator|Article|Ideas + summary|None|
-|Narrative Architect|Config + brief + article|Slide skeleton|Full brief|
-|Copywriter|Layout + brief + article|Text JSON|Voice/emotions|
+|Narrative Architect|Config + brief + article|Slide skeleton with template_type/value_subtype|Full brief|
+|Template Selector|Slide skeleton|Enriched slides with template_id|Semantic analysis|
+|Copywriter|Layout + brief + article + templates|Text JSON|Voice/emotions + template structures|
 |Visual Composer|Layout + config + brief|Design JSON|Visual/emotions|
 |Caption Writer|Config + slides + brief|Caption JSON|Voice/platform|
 
@@ -793,8 +1123,9 @@ Token estimates reduced: Ideation ~2500 in/~800 out; others ~500 in/~200 out.
 
 - **Phase 1**: ≥3 ideas? Distinct?
 - **Phase 2**: Config complete? Brief valid?
-- **Phase 3**: ≥5 slides? Arc logical?
-- **Phase 4**: Text in limits? Design no-text? Image dims correct?
+- **Phase 3**: ≥5 slides? Arc logical? All slides have template_type? Value slides have value_subtype?
+- **Phase 3a**: All slides have template_id? Confidence >0.5? Template matches slide purpose?
+- **Phase 4**: Text in limits? Text follows template structure? Design no-text? Image dims correct?
 - **Phase 5**: Caption length OK? Score >0.7?
 
 Retry: 2 attempts with feedback; fallback to defaults.
@@ -835,11 +1166,17 @@ social-media-pipeline/
 │   │   ├── post_creation.py
 │   │   ├── slide_generation.py
 │   │   └── finalization.py
+│   ├── templates/
+│   │   ├── textual_templates.py  # 46 template definitions
+│   │   ├── library.py              # Template library manager
+│   │   └── selector.py             # Semantic template selector
 │   ├── utils/
 │   │   ├── ai_client.py
 │   │   └── validators.py
-├── libraries/  # Unchanged
-├── prompts/    # Simplified: 5 files
+├── libraries/  # Design libraries (palettes, typography, layouts)
+├── prompts/    # 5 core prompts
+│   ├── narrative_architect.md  # Defines template_type/value_subtype
+│   └── copywriter.md           # Uses template structures
 ├── output/
 └── config.yaml
 ```
@@ -850,6 +1187,11 @@ Parallel: Posts independent; slides parallel.
 
 Costs per post (7 slides): ~15 calls, ~12k tokens, ~$0.50 (reduced from original).
 
+**Template Selection**: 
+- Initialization: ~2-3 seconds (pre-compute embeddings, one-time per process)
+- Per slide: ~100ms (semantic analysis) or ~5ms (fallback keyword matching)
+- Total for 7 slides: ~700ms (with embeddings) or ~35ms (fallback)
+
 ### Modes
 
 - **Auto**: Article → all posts.
@@ -857,7 +1199,11 @@ Costs per post (7 slides): ~15 calls, ~12k tokens, ~$0.50 (reduced from original
 
 ### Extensibility
 
-Add: New modules/layouts in libs; new prompts/phases.
+Add: 
+- New templates in `src/templates/textual_templates.py` (automatically integrated via semantic matching).
+- New modules/layouts in design libraries.
+- New prompts/phases.
+- Custom embedding models for template selection (see `TemplateSelector` configuration).
 
 ---
 
@@ -872,11 +1218,13 @@ Add: New modules/layouts in libs; new prompts/phases.
 
 - Code resolvers/builders.
 - Narrative Architect.
+- ✅ **Template Selector** (implemented with semantic embeddings).
 
 ### Phase 3: Generation
 
 - Parallel slide gen/composition.
 - Image integration.
+- ✅ **Template-based text generation** (Copywriter uses template structures).
 
 ### Phase 4: Final + UI
 
@@ -891,9 +1239,22 @@ Add: New modules/layouts in libs; new prompts/phases.
 
 ## References
 
-- [[Prompts]] – Core 5 prompts.
-- [[Libraries]] – Docs.
+### Core Documentation
+- [[Prompts]] – Core 5 prompts (including narrative_architect.md and copywriter.md with template integration).
+- [[Libraries]] – Design libraries (palettes, typography, layouts).
 - [[Examples]] – Sample runs.
+
+### Template System Documentation
+- [[SEMANTIC_TEMPLATE_SELECTION.md]] – Detailed guide on semantic template selection with embeddings.
+- [[template_based_narrative_system.md]] – Complete overview of the template-based narrative system.
+- [[IMPLEMENTATION_SUMMARY.md]] – Implementation details and metrics for template selector.
+
+### Code References
+- `src/templates/textual_templates.py` – 46 template definitions.
+- `src/templates/library.py` – Template library manager.
+- `src/templates/selector.py` – Semantic template selector with embeddings support.
+- `prompts/narrative_architect.md` – Defines high-level template types (hook, value, cta).
+- `prompts/copywriter.md` – Uses selected template structures for text generation.
 
 ---
 

@@ -367,7 +367,8 @@ CONSTRAINTS:
             narrative_structure: Complete narrative structure with slides, pacing, etc.
         """
         self.narrative_structure = narrative_structure
-        self.narrative_pacing = narrative_structure.get("pacing", "moderate")
+        # Support both "pacing" (old) and "narrative_pacing" (new) for backward compatibility
+        self.narrative_pacing = narrative_structure.get("narrative_pacing") or narrative_structure.get("pacing", "moderate")
         self.transition_style = narrative_structure.get("transition_style", "smooth")
         self.arc_refined = narrative_structure.get("arc_refined")
         self.narrative_rationale = narrative_structure.get("rationale")
