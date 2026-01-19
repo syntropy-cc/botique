@@ -11,10 +11,10 @@ from typing import Dict, List, Optional
 from .textual_templates import (
     TextualTemplate,
     HOOK_TEMPLATES,
-    VALOR_DADO_TEMPLATES,
-    VALOR_INSIGHT_TEMPLATES,
-    VALOR_SOLUCAO_TEMPLATES,
-    VALOR_EXEMPLO_TEMPLATES,
+    VALUE_DATA_TEMPLATES,
+    VALUE_INSIGHT_TEMPLATES,
+    VALUE_SOLUTION_TEMPLATES,
+    VALUE_EXAMPLE_TEMPLATES,
     CTA_TEMPLATES,
 )
 
@@ -31,10 +31,10 @@ class TemplateLibrary:
         """Load all templates into dictionary by ID"""
         all_templates = (
             HOOK_TEMPLATES +
-            VALOR_DADO_TEMPLATES +
-            VALOR_INSIGHT_TEMPLATES +
-            VALOR_SOLUCAO_TEMPLATES +
-            VALOR_EXEMPLO_TEMPLATES +
+            VALUE_DATA_TEMPLATES +
+            VALUE_INSIGHT_TEMPLATES +
+            VALUE_SOLUTION_TEMPLATES +
+            VALUE_EXAMPLE_TEMPLATES +
             CTA_TEMPLATES
         )
         self.templates = {t.id: t for t in all_templates}

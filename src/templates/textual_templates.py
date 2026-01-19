@@ -182,7 +182,7 @@ HOOK_TEMPLATES = [
 # VALUE: DATA TEMPLATES
 # =============================================================================
 
-VALOR_DADO_TEMPLATES = [
+VALUE_DATA_TEMPLATES = [
     TextualTemplate(
         id="VD_DATA%",
         module_type="insight",  # Data templates map to insight module type
@@ -266,7 +266,7 @@ VALOR_DADO_TEMPLATES = [
 # VALUE: INSIGHT TEMPLATES
 # =============================================================================
 
-VALOR_INSIGHT_TEMPLATES = [
+VALUE_INSIGHT_TEMPLATES = [
     TextualTemplate(
         id="VI_PRINCIPLE",
         module_type="insight",
@@ -350,7 +350,7 @@ VALOR_INSIGHT_TEMPLATES = [
 # VALUE: SOLUTION TEMPLATES
 # =============================================================================
 
-VALOR_SOLUCAO_TEMPLATES = [
+VALUE_SOLUTION_TEMPLATES = [
     TextualTemplate(
         id="VS_123",
         module_type="solution",
@@ -434,7 +434,7 @@ VALOR_SOLUCAO_TEMPLATES = [
 # VALUE: EXAMPLE TEMPLATES
 # =============================================================================
 
-VALOR_EXEMPLO_TEMPLATES = [
+VALUE_EXAMPLE_TEMPLATES = [
     TextualTemplate(
         id="VE_MINICASE",
         module_type="example",

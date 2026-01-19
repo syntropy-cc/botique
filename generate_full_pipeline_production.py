@@ -13,9 +13,11 @@ Uses the complete production workflow with integrated SQL logging.
 import json
 import os
 import sys
+import time
 import warnings
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -74,12 +76,20 @@ def print_slide_copy_details(
                 print(f"   • Position: x={title_position.get('x', 'N/A')}, y={title_position.get('y', 'N/A')}")
             if title_emphasis:
                 print(f"   • Emphasis ({len(title_emphasis)} span(s)):")
+                print(f"      🔍 Emphasis format: {type(title_emphasis).__name__}, items: {[type(item).__name__ for item in title_emphasis[:3]]}")
                 for idx, emph in enumerate(title_emphasis, 1):
-                    emph_text = emph.get("text", "")
-                    start_idx = emph.get("start_index", "N/A")
-                    end_idx = emph.get("end_index", "N/A")
-                    styles = ", ".join(emph.get("styles", []))
-                    print(f"     [{idx}] '{emph_text}' (indices {start_idx}-{end_idx}) → [{styles}]")
+                    if isinstance(emph, dict):
+                        # Handle dict format (legacy format with text, start_index, end_index, styles)
+                        emph_text = emph.get("text", "")
+                        start_idx = emph.get("start_index", "N/A")
+                        end_idx = emph.get("end_index", "N/A")
+                        styles = ", ".join(emph.get("styles", []))
+                        print(f"     [{idx}] '{emph_text}' (indices {start_idx}-{end_idx}) → [{styles}]")
+                    elif isinstance(emph, str):
+                        # Handle string format (current format - simple list of strings)
+                        print(f"     [{idx}] '{emph}'")
+                    else:
+                        print(f"     [{idx}] ⚠️  Unexpected type: {type(emph).__name__} - {str(emph)[:50]}")
         else:
             print(f"\n📰 TITLE: {title_obj}")
     else:
@@ -99,12 +109,20 @@ def print_slide_copy_details(
                 print(f"   • Position: x={subtitle_position.get('x', 'N/A')}, y={subtitle_position.get('y', 'N/A')}")
             if subtitle_emphasis:
                 print(f"   • Emphasis ({len(subtitle_emphasis)} span(s)):")
+                print(f"      🔍 Emphasis format: {type(subtitle_emphasis).__name__}, items: {[type(item).__name__ for item in subtitle_emphasis[:3]]}")
                 for idx, emph in enumerate(subtitle_emphasis, 1):
-                    emph_text = emph.get("text", "")
-                    start_idx = emph.get("start_index", "N/A")
-                    end_idx = emph.get("end_index", "N/A")
-                    styles = ", ".join(emph.get("styles", []))
-                    print(f"     [{idx}] '{emph_text}' (indices {start_idx}-{end_idx}) → [{styles}]")
+                    if isinstance(emph, dict):
+                        # Handle dict format (legacy format with text, start_index, end_index, styles)
+                        emph_text = emph.get("text", "")
+                        start_idx = emph.get("start_index", "N/A")
+                        end_idx = emph.get("end_index", "N/A")
+                        styles = ", ".join(emph.get("styles", []))
+                        print(f"     [{idx}] '{emph_text}' (indices {start_idx}-{end_idx}) → [{styles}]")
+                    elif isinstance(emph, str):
+                        # Handle string format (current format - simple list of strings)
+                        print(f"     [{idx}] '{emph}'")
+                    else:
+                        print(f"     [{idx}] ⚠️  Unexpected type: {type(emph).__name__} - {str(emph)[:50]}")
         else:
             print(f"\n📄 SUBTITLE: {subtitle_obj}")
     else:
@@ -133,12 +151,20 @@ def print_slide_copy_details(
                 print(f"   • Position: x={body_position.get('x', 'N/A')}, y={body_position.get('y', 'N/A')}")
             if body_emphasis:
                 print(f"   • Emphasis ({len(body_emphasis)} span(s)):")
+                print(f"      🔍 Emphasis format: {type(body_emphasis).__name__}, items: {[type(item).__name__ for item in body_emphasis[:3]]}")
                 for idx, emph in enumerate(body_emphasis, 1):
-                    emph_text = emph.get("text", "")
-                    start_idx = emph.get("start_index", "N/A")
-                    end_idx = emph.get("end_index", "N/A")
-                    styles = ", ".join(emph.get("styles", []))
-                    print(f"     [{idx}] '{emph_text}' (indices {start_idx}-{end_idx}) → [{styles}]")
+                    if isinstance(emph, dict):
+                        # Handle dict format (legacy format with text, start_index, end_index, styles)
+                        emph_text = emph.get("text", "")
+                        start_idx = emph.get("start_index", "N/A")
+                        end_idx = emph.get("end_index", "N/A")
+                        styles = ", ".join(emph.get("styles", []))
+                        print(f"     [{idx}] '{emph_text}' (indices {start_idx}-{end_idx}) → [{styles}]")
+                    elif isinstance(emph, str):
+                        # Handle string format (current format - simple list of strings)
+                        print(f"     [{idx}] '{emph}'")
+                    else:
+                        print(f"     [{idx}] ⚠️  Unexpected type: {type(emph).__name__} - {str(emph)[:50]}")
         else:
             print(f"\n📝 BODY: {body_obj}")
     else:
@@ -187,20 +213,27 @@ def generate_workflow_documentation(
     all_copy_results: List[Dict[str, Any]],
     logger: LLMLogger,
     article_output_dir: Path,
-) -> None:
+    execution_metrics: Optional[Dict[str, Any]] = None,
+) -> Path:
     """
-    Gera um documento Markdown detalhado com todo o workflow e outputs.
+    Generate a detailed Markdown document with complete workflow and outputs.
     
     Args:
-        trace_id: ID do trace para buscar eventos do banco de dados
-        article_slug: Slug do artigo processado
-        article_text: Texto completo do artigo
-        all_ideas: Lista de todas as ideias geradas
-        all_copy_results: Lista de todos os resultados de copywriting
-        logger: LLMLogger com as chamadas
-        article_output_dir: Diretório de output do artigo
+        trace_id: Trace ID to fetch events from database
+        article_slug: Slug of processed article
+        article_text: Full article text
+        all_ideas: List of all generated ideas
+        all_copy_results: List of all copywriting results
+        logger: LLMLogger with calls
+        article_output_dir: Article output directory
+        execution_metrics: Optional execution metrics including phase timings, errors, warnings
+        
+    Returns:
+        Path to the generated documentation file
+        
+    Raises:
+        Exception: If documentation generation fails, with full traceback information
     """
-    from datetime import datetime
     
     # Buscar trace completo do banco de dados
     db_path = get_db_path()
@@ -226,18 +259,21 @@ def generate_workflow_documentation(
     lines.append("---")
     lines.append("")
     
-    # Tabela de Conteúdo
+    # Table of Contents
     lines.append("## Table of Contents")
     lines.append("")
     lines.append("1. [Overview](#overview)")
-    lines.append("2. [Article Content](#article-content)")
-    lines.append("3. [Phase 1: Ideation](#phase-1-ideation)")
-    lines.append("4. [Phase 2: Coherence Briefs](#phase-2-coherence-briefs)")
-    lines.append("5. [Phase 3: Narrative Architect](#phase-3-narrative-architect)")
-    lines.append("6. [Template Selection System](#template-selection-system)")
-    lines.append("7. [Phase 4: Copywriter](#phase-4-copywriter)")
-    lines.append("8. [LLM Events & Responses](#llm-events--responses)")
-    lines.append("9. [Metrics Summary](#metrics-summary)")
+    lines.append("2. [Performance Metrics](#performance-metrics)")
+    lines.append("3. [Execution Timeline](#execution-timeline)")
+    lines.append("4. [Errors and Warnings](#errors-and-warnings)")
+    lines.append("5. [Article Content](#article-content)")
+    lines.append("6. [Phase 1: Ideation](#phase-1-ideation)")
+    lines.append("7. [Phase 2: Coherence Briefs](#phase-2-coherence-briefs)")
+    lines.append("8. [Phase 3: Narrative Architect](#phase-3-narrative-architect)")
+    lines.append("9. [Template Selection System](#template-selection-system)")
+    lines.append("10. [Phase 4: Copywriter](#phase-4-copywriter)")
+    lines.append("11. [LLM Events & Responses](#llm-events--responses)")
+    lines.append("12. [Metrics Summary](#metrics-summary)")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -253,6 +289,176 @@ def generate_workflow_documentation(
         total_slides = sum(len(r.get("slide_contents", [])) if isinstance(r.get("slide_contents"), list) else 0 for r in all_copy_results)
         lines.append(f"- **Total Slides Generated:** {total_slides}")
         lines.append(f"- **Trace Created:** {trace_data.get('created_at', 'N/A')}")
+    
+    # Add overall execution time if available
+    if execution_metrics and execution_metrics.get("pipeline_start_time") and execution_metrics.get("pipeline_end_time"):
+        total_duration = execution_metrics["pipeline_end_time"] - execution_metrics["pipeline_start_time"]
+        lines.append(f"- **Total Pipeline Duration:** {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")
+    
+    # Add error/warning summary if available
+    if execution_metrics:
+        errors = execution_metrics.get("errors", [])
+        warnings = execution_metrics.get("warnings", [])
+        if errors or warnings:
+            lines.append(f"- **Errors:** {len(errors)}")
+            lines.append(f"- **Warnings:** {len(warnings)}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    
+    # Performance Metrics
+    lines.append("## Performance Metrics")
+    lines.append("")
+    if execution_metrics and execution_metrics.get("phase_timings"):
+        phase_timings = execution_metrics["phase_timings"]
+        lines.append("### Phase Execution Times")
+        lines.append("")
+        lines.append("| Phase | Duration (seconds) | Duration (minutes) | Status |")
+        lines.append("|-------|-------------------|-------------------|--------|")
+        
+        for phase_name, phase_data in phase_timings.items():
+            if isinstance(phase_data, dict):
+                duration = phase_data.get("duration", 0)
+                status = phase_data.get("status", "completed")
+                status_icon = "✓" if status == "completed" else "✗" if status == "failed" else "⚠"
+                lines.append(f"| {phase_name} | {duration:.2f} | {duration/60:.2f} | {status_icon} {status} |")
+        
+        lines.append("")
+        
+        # Calculate averages if multiple items processed
+        if execution_metrics.get("items_processed"):
+            items = execution_metrics["items_processed"]
+            if items.get("ideas") and items["ideas"].get("count", 0) > 0:
+                ideation_time = phase_timings.get("Phase 1: Ideation", {}).get("duration", 0)
+                if ideation_time > 0:
+                    time_per_idea = ideation_time / items["ideas"]["count"]
+                    lines.append(f"- **Average time per idea:** {time_per_idea:.2f} seconds")
+            
+            if items.get("posts") and items["posts"].get("count", 0) > 0:
+                copywriting_time = phase_timings.get("Phase 4: Copywriting", {}).get("duration", 0)
+                if copywriting_time > 0:
+                    time_per_post = copywriting_time / items["posts"]["count"]
+                    lines.append(f"- **Average time per post:** {time_per_post:.2f} seconds")
+            
+            total_slides = sum(len(r.get("slide_contents", [])) if isinstance(r.get("slide_contents"), list) else 0 for r in all_copy_results)
+            if total_slides > 0:
+                copywriting_time = phase_timings.get("Phase 4: Copywriting", {}).get("duration", 0)
+                if copywriting_time > 0:
+                    time_per_slide = copywriting_time / total_slides
+                    lines.append(f"- **Average time per slide:** {time_per_slide:.2f} seconds")
+                    lines.append(f"- **Slide generation rate:** {total_slides/copywriting_time:.2f} slides/second")
+        
+        lines.append("")
+    else:
+        lines.append("*No performance metrics available*")
+        lines.append("")
+    lines.append("---")
+    lines.append("")
+    
+    # Execution Timeline
+    lines.append("## Execution Timeline")
+    lines.append("")
+    if execution_metrics and execution_metrics.get("phase_timings"):
+        phase_timings = execution_metrics["phase_timings"]
+        lines.append("### Timeline of Pipeline Phases")
+        lines.append("")
+        
+        # Sort phases by start time if available
+        sorted_phases = sorted(
+            phase_timings.items(),
+            key=lambda x: x[1].get("start_time", 0) if isinstance(x[1], dict) else 0
+        )
+        
+        for phase_name, phase_data in sorted_phases:
+            if isinstance(phase_data, dict):
+                start_time = phase_data.get("start_time")
+                end_time = phase_data.get("end_time")
+                duration = phase_data.get("duration", 0)
+                
+                lines.append(f"#### {phase_name}")
+                lines.append("")
+                if start_time:
+                    start_str = datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')
+                    lines.append(f"- **Started:** {start_str}")
+                if end_time:
+                    end_str = datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')
+                    lines.append(f"- **Ended:** {end_str}")
+                lines.append(f"- **Duration:** {duration:.2f} seconds")
+                
+                # Add phase-specific details if available
+                if phase_data.get("details"):
+                    lines.append(f"- **Details:** {phase_data['details']}")
+                lines.append("")
+    else:
+        lines.append("*No timeline data available*")
+        lines.append("")
+    lines.append("---")
+    lines.append("")
+    
+    # Errors and Warnings
+    lines.append("## Errors and Warnings")
+    lines.append("")
+    if execution_metrics:
+        errors = execution_metrics.get("errors", [])
+        warnings = execution_metrics.get("warnings", [])
+        
+        if errors:
+            lines.append("### Errors")
+            lines.append("")
+            for idx, error in enumerate(errors, 1):
+                error_phase = error.get("phase", "Unknown")
+                error_message = error.get("message", "No message")
+                error_time = error.get("timestamp")
+                error_type = error.get("type", "Error")
+                
+                lines.append(f"#### Error {idx}: {error_type}")
+                lines.append("")
+                lines.append(f"- **Phase:** {error_phase}")
+                if error_time:
+                    time_str = datetime.fromtimestamp(error_time).strftime('%Y-%m-%d %H:%M:%S')
+                    lines.append(f"- **Time:** {time_str}")
+                lines.append(f"- **Message:** {error_message}")
+                
+                # Add full traceback if available
+                if error.get("traceback"):
+                    lines.append("")
+                    lines.append("**Full Traceback:**")
+                    lines.append("")
+                    lines.append("```")
+                    lines.append(error["traceback"])
+                    lines.append("```")
+                lines.append("")
+        else:
+            lines.append("### Errors")
+            lines.append("")
+            lines.append("*No errors occurred during execution*")
+            lines.append("")
+        
+        if warnings:
+            lines.append("### Warnings")
+            lines.append("")
+            for idx, warning in enumerate(warnings, 1):
+                warning_phase = warning.get("phase", "Unknown")
+                warning_message = warning.get("message", "No message")
+                warning_time = warning.get("timestamp")
+                
+                lines.append(f"#### Warning {idx}")
+                lines.append("")
+                lines.append(f"- **Phase:** {warning_phase}")
+                if warning_time:
+                    time_str = datetime.fromtimestamp(warning_time).strftime('%Y-%m-%d %H:%M:%S')
+                    lines.append(f"- **Time:** {time_str}")
+                lines.append(f"- **Message:** {warning_message}")
+                lines.append("")
+        else:
+            lines.append("### Warnings")
+            lines.append("")
+            lines.append("*No warnings during execution*")
+            lines.append("")
+    else:
+        lines.append("*No error/warning tracking data available*")
+        lines.append("")
+    lines.append("---")
     lines.append("")
     
     # Article Content
@@ -406,6 +612,16 @@ def generate_workflow_documentation(
         lines.append("### Slides: Narrative Structure & Copy")
         lines.append("")
         
+        # Normalize slide_numbers to int for consistent matching
+        def normalize_slide_number(num):
+            """Normalize slide_number to int for consistent dict lookups."""
+            if num is None or num == "?":
+                return None
+            try:
+                return int(num)
+            except (ValueError, TypeError):
+                return num
+        
         # Create maps for easy lookup
         slides_narrative = {}
         if narrative_payload and isinstance(narrative_payload, dict):
@@ -413,23 +629,56 @@ def generate_workflow_documentation(
             if isinstance(slides_list, list):
                 for slide in slides_list:
                     if isinstance(slide, dict):
-                        slide_num = slide.get("slide_number", "?")
-                        slides_narrative[slide_num] = slide
+                        slide_num_raw = slide.get("slide_number", "?")
+                        slide_num = normalize_slide_number(slide_num_raw)
+                        # Store with normalized key
+                        if slide_num is not None:
+                            slides_narrative[slide_num] = slide
+                            # Also store with original value if different
+                            if slide_num != slide_num_raw:
+                                slides_narrative[slide_num_raw] = slide
         
         slides_copy_map = {}
         if isinstance(slide_contents, list):
             for slide_result in slide_contents:
                 if isinstance(slide_result, dict):
-                    slide_num = slide_result.get("slide_number")
+                    slide_num_raw = slide_result.get("slide_number")
+                    slide_num = normalize_slide_number(slide_num_raw)
                     if slide_num is not None:
+                        # Store with normalized key
                         slides_copy_map[slide_num] = slide_result.get("slide_content")
+                        # Also store with original value if different
+                        if slide_num != slide_num_raw:
+                            slides_copy_map[slide_num_raw] = slide_result.get("slide_content")
         
-        # Get all slide numbers in order
-        all_slide_nums = sorted(set(list(slides_narrative.keys()) + list(slides_copy_map.keys())))
+        # Get all slide numbers in order (normalize for comparison)
+        all_slide_nums_raw = set(list(slides_narrative.keys()) + list(slides_copy_map.keys()))
+        all_slide_nums_normalized = set()
+        for num in all_slide_nums_raw:
+            normalized = normalize_slide_number(num)
+            if normalized is not None:
+                all_slide_nums_normalized.add(normalized)
+            else:
+                all_slide_nums_normalized.add(num)
+        all_slide_nums = sorted(all_slide_nums_normalized)
         
         for slide_num in all_slide_nums:
+            # Try normalized lookup first, then fallback to raw
             slide_narrative = slides_narrative.get(slide_num)
+            if not slide_narrative:
+                # Try to find by iterating through keys
+                for key in slides_narrative.keys():
+                    if normalize_slide_number(key) == slide_num:
+                        slide_narrative = slides_narrative[key]
+                        break
+            
             slide_content = slides_copy_map.get(slide_num)
+            if not slide_content:
+                # Try to find by iterating through keys
+                for key in slides_copy_map.keys():
+                    if normalize_slide_number(key) == slide_num:
+                        slide_content = slides_copy_map[key]
+                        break
             
             lines.append(f"#### Slide {slide_num}")
             lines.append("")
@@ -859,11 +1108,46 @@ def generate_workflow_documentation(
     lines.append(f"*Document generated automatically by the Botique pipeline*")
     lines.append(f"*Trace ID: {trace_id}*")
     
-    # Escrever arquivo
-    doc_path.write_text("\n".join(lines), encoding="utf-8")
-    print(f"\n   📄 Workflow documentation saved: {doc_path}")
-    
-    return doc_path
+    # Write file with proper error handling
+    try:
+        doc_path.write_text("\n".join(lines), encoding="utf-8")
+        
+        # Verify file was created and has content
+        if not doc_path.exists():
+            raise FileNotFoundError(f"Documentation file was not created at {doc_path}")
+        
+        file_size = doc_path.stat().st_size
+        if file_size == 0:
+            raise ValueError(f"Documentation file was created but is empty at {doc_path}")
+        
+        print(f"\n   ✓ Workflow documentation saved: {doc_path}")
+        print(f"   ✓ File size: {file_size:,} bytes")
+        
+        return doc_path
+        
+    except Exception as file_error:
+        # Log detailed error information
+        import traceback
+        error_traceback = traceback.format_exc()
+        error_message = (
+            f"Failed to write workflow documentation file:\n"
+            f"  Path: {doc_path}\n"
+            f"  Error: {str(file_error)}\n"
+            f"  Type: {type(file_error).__name__}\n"
+            f"  Traceback:\n{error_traceback}"
+        )
+        print(f"\n   ❌ ERROR: {error_message}")
+        
+        # Try to write error to a log file
+        try:
+            error_log_path = article_output_dir / "workflow_documentation_error.log"
+            error_log_path.write_text(error_message, encoding="utf-8")
+            print(f"   📝 Error details written to: {error_log_path}")
+        except Exception:
+            pass
+        
+        # Re-raise with full context
+        raise RuntimeError(error_message) from file_error
 
 
 def print_brief_details(brief: CoherenceBrief, phase: str = "") -> None:
@@ -1319,6 +1603,21 @@ def main() -> int:
 
     # Load environment variables
     load_dotenv()
+    
+    # Initialize execution metrics tracking
+    pipeline_start_time = time.time()
+    execution_metrics = {
+        "pipeline_start_time": pipeline_start_time,
+        "pipeline_end_time": None,
+        "phase_timings": {},
+        "errors": [],
+        "warnings": [],
+        "items_processed": {
+            "ideas": {"count": 0},
+            "posts": {"count": 0},
+            "slides": {"count": 0},
+        },
+    }
 
     # Configuration
     article_path = Path(os.getenv("ARTICLE_PATH", "articles/why-tradicional-learning-fails.md"))
@@ -1346,9 +1645,13 @@ def main() -> int:
     print("\n2. Loading article...")
     if not article_path.exists():
         print(f"❌ ERROR: Article file not found: {article_path}")
+        execution_metrics["errors"].append({
+            "phase": "Initialization",
+            "type": "FileNotFoundError",
+            "message": f"Article file not found: {article_path}",
+            "timestamp": time.time(),
+        })
         return 1
-
-    import time
 
     load_start = time.time()
     try:
@@ -1411,6 +1714,14 @@ def main() -> int:
     print("\n" + "=" * 70)
     print("PHASE 1: IDEATION")
     print("=" * 70)
+    
+    phase1_start_time = time.time()
+    execution_metrics["phase_timings"]["Phase 1: Ideation"] = {
+        "start_time": phase1_start_time,
+        "end_time": None,
+        "duration": 0,
+        "status": "in_progress",
+    }
 
     # Verify post_ideator prompt
     print("\n4. Verifying post_ideator prompt...")
@@ -1456,12 +1767,40 @@ def main() -> int:
 
     except Exception as exc:
         error_msg = str(exc)
+        import traceback
+        error_traceback = traceback.format_exc()
         print(f"   ⚠️  WARNING: Error generating ideas: {error_msg}")
         print(f"   ℹ️  Cannot continue without ideas. Exiting.")
+        
+        execution_metrics["errors"].append({
+            "phase": "Phase 1: Ideation",
+            "type": type(exc).__name__,
+            "message": error_msg,
+            "traceback": error_traceback,
+            "timestamp": time.time(),
+        })
+        
+        phase1_end_time = time.time()
+        execution_metrics["phase_timings"]["Phase 1: Ideation"].update({
+            "end_time": phase1_end_time,
+            "duration": phase1_end_time - phase1_start_time,
+            "status": "failed",
+        })
+        
         return 1
 
     article_summary = ideas_payload.get("article_summary", {})
     all_ideas = ideas_payload.get("ideas", [])
+    
+    # Update phase 1 metrics
+    phase1_end_time = time.time()
+    execution_metrics["phase_timings"]["Phase 1: Ideation"].update({
+        "end_time": phase1_end_time,
+        "duration": phase1_end_time - phase1_start_time,
+        "status": "completed",
+        "details": f"Generated {len(all_ideas)} ideas",
+    })
+    execution_metrics["items_processed"]["ideas"]["count"] = len(all_ideas)
 
     print(f"   ✓ Total ideas generated: {len(all_ideas)}")
     print(f"   ✓ Article title: {article_summary.get('title', 'N/A')}")
@@ -1481,9 +1820,18 @@ def main() -> int:
     print("\n" + "=" * 70)
     print("PHASE 2: BUILDING COHERENCE BRIEFS")
     print("=" * 70)
+    
+    phase2_start_time = time.time()
+    execution_metrics["phase_timings"]["Phase 2: Coherence Briefs"] = {
+        "start_time": phase2_start_time,
+        "end_time": None,
+        "duration": 0,
+        "status": "in_progress",
+    }
 
     print("\n7. Building coherence briefs from ideas...")
     briefs = []
+    phase2_errors = []
 
     for idx, idea in enumerate(selected_ideas, 1):
         idea_id = idea.get("id", f"unknown_{idx}")
@@ -1509,12 +1857,43 @@ def main() -> int:
 
         except Exception as exc:
             error_msg = str(exc)
+            import traceback
+            error_traceback = traceback.format_exc()
             print(f"   ⚠️  WARNING: Error building brief for {idea_id}: {error_msg}")
             print(f"   ℹ️  Skipping this idea and continuing...")
+            
+            phase2_errors.append({
+                "phase": "Phase 2: Coherence Briefs",
+                "type": type(exc).__name__,
+                "message": f"Error building brief for {idea_id}: {error_msg}",
+                "traceback": error_traceback,
+                "timestamp": time.time(),
+                "idea_id": idea_id,
+            })
+            execution_metrics["warnings"].append({
+                "phase": "Phase 2: Coherence Briefs",
+                "message": f"Brief for {idea_id} failed, skipped",
+                "timestamp": time.time(),
+            })
             # Continue to next idea instead of returning 1
 
+    phase2_end_time = time.time()
+    execution_metrics["phase_timings"]["Phase 2: Coherence Briefs"].update({
+        "end_time": phase2_end_time,
+        "duration": phase2_end_time - phase2_start_time,
+        "status": "completed" if briefs else "failed",
+        "details": f"Built {len(briefs)} brief(s), {len(phase2_errors)} failed",
+    })
+    execution_metrics["errors"].extend(phase2_errors)
+    
     if not briefs:
         print(f"   ❌ ERROR: No coherence briefs were built successfully. Cannot continue.")
+        execution_metrics["errors"].append({
+            "phase": "Phase 2: Coherence Briefs",
+            "type": "ValidationError",
+            "message": "No coherence briefs were built successfully",
+            "timestamp": time.time(),
+        })
         return 1
     
     print(f"   ✓ {len(briefs)} coherence brief(s) built successfully")
@@ -1525,6 +1904,14 @@ def main() -> int:
     print("\n" + "=" * 70)
     print("PHASE 3: NARRATIVE ARCHITECT")
     print("=" * 70)
+    
+    phase3_start_time = time.time()
+    execution_metrics["phase_timings"]["Phase 3: Narrative Architect"] = {
+        "start_time": phase3_start_time,
+        "end_time": None,
+        "duration": 0,
+        "status": "in_progress",
+    }
 
     # Verify narrative_architect prompt
     print("\n8. Verifying narrative_architect prompt...")
@@ -1610,6 +1997,8 @@ def main() -> int:
 
     print("\n10. Generating narrative structures...")
     narrative_results = []
+    phase3_errors = []
+    phase3_warnings = []
 
     for idx, brief in enumerate(briefs, 1):
         print(f"\n   [{idx}/{len(briefs)}] Generating narrative for {brief.post_id}...")
@@ -1628,9 +2017,16 @@ def main() -> int:
                 
                 # Display any warnings as informational messages
                 for warning in w:
-                    print(f"   ⚠️  WARNING: {warning.message}")
+                    warning_msg = str(warning.message)
+                    print(f"   ⚠️  WARNING: {warning_msg}")
                     if hasattr(warning, 'filename') and hasattr(warning, 'lineno'):
                         print(f"      (from {warning.filename}:{warning.lineno})")
+                    
+                    phase3_warnings.append({
+                        "phase": "Phase 3: Narrative Architect",
+                        "message": f"{brief.post_id}: {warning_msg}",
+                        "timestamp": time.time(),
+                    })
 
             narrative_results.append({
                 "brief": brief,
@@ -1732,10 +2128,20 @@ def main() -> int:
         except Exception as exc:
             error_msg = str(exc)
             error_type = type(exc).__name__
+            import traceback
+            error_traceback = traceback.format_exc()
             print(f"   ❌ ERROR: {error_type}: {error_msg}")
             
+            phase3_errors.append({
+                "phase": "Phase 3: Narrative Architect",
+                "type": error_type,
+                "message": f"{brief.post_id}: {error_msg}",
+                "traceback": error_traceback,
+                "timestamp": time.time(),
+                "post_id": brief.post_id,
+            })
+            
             # Try to get more context about the error
-            import traceback
             if isinstance(exc, ValueError):
                 # For validation errors, try to show what was expected vs received
                 if "Missing required keys" in error_msg or "Invalid item" in error_msg:
@@ -1764,6 +2170,16 @@ def main() -> int:
             
             print(f"   ℹ️  Continuing with next brief...")
             # Continue instead of returning 1
+    
+    phase3_end_time = time.time()
+    execution_metrics["phase_timings"]["Phase 3: Narrative Architect"].update({
+        "end_time": phase3_end_time,
+        "duration": phase3_end_time - phase3_start_time,
+        "status": "completed" if narrative_results else "failed",
+        "details": f"Generated {len(narrative_results)} narrative structure(s), {len(phase3_errors)} errors, {len(phase3_warnings)} warnings",
+    })
+    execution_metrics["errors"].extend(phase3_errors)
+    execution_metrics["warnings"].extend(phase3_warnings)
 
     print(f"\n   ✓ {len(narrative_results)} narrative structure(s) generated successfully")
 
@@ -1773,6 +2189,14 @@ def main() -> int:
     print("\n" + "=" * 70)
     print("PHASE 4: COPYWRITER")
     print("=" * 70)
+    
+    phase4_start_time = time.time()
+    execution_metrics["phase_timings"]["Phase 4: Copywriting"] = {
+        "start_time": phase4_start_time,
+        "end_time": None,
+        "duration": 0,
+        "status": "in_progress",
+    }
 
     # Verify copywriter prompt
     print("\n11. Verifying copywriter prompt...")
@@ -1793,6 +2217,8 @@ def main() -> int:
 
     print("\n13. Generating slide copy for all slides...")
     all_copy_results = []
+    phase4_errors = []
+    phase4_warnings = []
 
     for result_idx, result in enumerate(narrative_results, 1):
         brief = result["brief"]
@@ -1807,13 +2233,22 @@ def main() -> int:
             logger.set_context(post_id=brief.post_id)
 
             print(f"\n      Generating copy for all {len(slides)} slides...")
-
+            print(f"      📋 Post details: Platform={brief.platform}, Format={brief.format}, Tone={brief.tone}")
+            
+            # Pre-flight checks
+            slides_without_template = []
             for slide_info in slides:
                 template_id = slide_info.get("template_id")
                 if not template_id:
-                    print(f"      ⚠️  WARNING: Slide {slide_info.get('slide_number')} missing template_id before copywriting")
+                    slide_num = slide_info.get("slide_number", "?")
+                    slides_without_template.append(slide_num)
+                    print(f"      ⚠️  WARNING: Slide {slide_num} missing template_id before copywriting")
+            
+            if slides_without_template:
+                print(f"      ⚠️  Found {len(slides_without_template)} slide(s) without template_id: {slides_without_template}")
 
             # Capture warnings and display them as informational messages
+            print(f"\n      🤖 Calling LLM to generate copy for {len(slides)} slides...")
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 
@@ -1827,25 +2262,121 @@ def main() -> int:
                 
                 # Display any warnings as informational messages
                 for warning in w:
-                    print(f"      ⚠️  WARNING: {warning.message}")
+                    warning_msg = str(warning.message)
+                    print(f"      ⚠️  WARNING: {warning_msg}")
+                    phase4_warnings.append({
+                        "phase": "Phase 4: Copywriting",
+                        "message": f"{brief.post_id}: {warning_msg}",
+                        "timestamp": time.time(),
+                    })
 
             # Extract slides from response
             slides_copy = post_copy_result.get("slides", [])
+            print(f"      ✅ LLM response received: {len(slides_copy)} slide(s) returned")
             
             if len(slides_copy) != len(slides):
                 print(f"      ⚠️  WARNING: Expected {len(slides)} slides, got {len(slides_copy)}")
+                print(f"         This may indicate a mismatch in the response structure.")
             
             # Match slides copy with slides info by slide_number
-            slides_copy_dict = {s.get("slide_number"): s for s in slides_copy}
+            # Normalize slide_numbers to int for consistent matching
+            def normalize_slide_number(num):
+                """Normalize slide_number to int for consistent dict lookups."""
+                if num is None:
+                    return None
+                try:
+                    return int(num)
+                except (ValueError, TypeError):
+                    return num
+            
+            # Build dictionary with normalized keys (store with both int and original value as keys for compatibility)
+            print(f"\n      🔍 Matching {len(slides_copy)} copy response(s) with {len(slides)} narrative slide(s)...")
+            slides_copy_dict = {}
+            for s in slides_copy:
+                slide_num = s.get("slide_number")
+                if slide_num is not None:
+                    normalized = normalize_slide_number(slide_num)
+                    # Store with normalized (int) key as primary
+                    slides_copy_dict[normalized] = s
+                    # Also store with original value if different (for backwards compatibility)
+                    if normalized != slide_num:
+                        slides_copy_dict[slide_num] = s
+            
+            copy_slide_numbers = sorted([normalize_slide_number(s.get("slide_number")) for s in slides_copy if s.get("slide_number") is not None])
+            narrative_slide_numbers = sorted([normalize_slide_number(s.get("slide_number", idx)) for idx, s in enumerate(slides, 1)])
+            print(f"         Copy response slide_numbers: {copy_slide_numbers}")
+            print(f"         Narrative slide_numbers: {narrative_slide_numbers}")
+            
+            matched_count = 0
+            unmatched_count = 0
             
             for slide_idx, slide_info in enumerate(slides, 1):
-                slide_number = slide_info.get("slide_number", slide_idx)
+                slide_number_raw = slide_info.get("slide_number", slide_idx)
+                slide_number = normalize_slide_number(slide_number_raw)
                 module_type = slide_info.get("module_type", "unknown")
+                template_type = slide_info.get("template_type", "unknown")
                 
+                print(f"\n      📝 Processing Slide {slide_number} ({template_type})...")
+                
+                # Try multiple lookup strategies
                 slide_content = slides_copy_dict.get(slide_number)
+                lookup_strategy = "normalized"
+                if not slide_content and slide_number != slide_number_raw:
+                    # Try with original value if different
+                    slide_content = slides_copy_dict.get(slide_number_raw)
+                    lookup_strategy = "original"
+                
                 if not slide_content:
-                    print(f"      ⚠️  WARNING: No copy found for slide {slide_number}")
+                    unmatched_count += 1
+                    # Detailed logging for debugging
+                    available_numbers = sorted(set(
+                        normalize_slide_number(s.get("slide_number")) 
+                        for s in slides_copy 
+                        if s.get("slide_number") is not None
+                    ))
+                    narrative_numbers = sorted(set(
+                        normalize_slide_number(s.get("slide_number", idx))
+                        for idx, s in enumerate(slides, 1)
+                    ))
+                    print(f"         ❌ No copy found for slide {slide_number} (raw: {slide_number_raw}, type: {type(slide_number).__name__})")
+                    print(f"            Available copy slide_numbers: {available_numbers}")
+                    print(f"            Expected narrative slide_numbers: {narrative_numbers}")
+                    print(f"            Slide info: template_type={slide_info.get('template_type')}, purpose={slide_info.get('purpose', 'N/A')[:50]}")
+                    phase4_warnings.append({
+                        "phase": "Phase 4: Copywriting",
+                        "message": f"{brief.post_id}: No copy found for slide {slide_number}. Available: {available_numbers}, Expected: {narrative_numbers}",
+                        "timestamp": time.time(),
+                    })
                     continue
+                
+                matched_count += 1
+                print(f"         ✅ Copy found (lookup: {lookup_strategy})")
+                
+                # Extract quick summary of copy content
+                title_obj = slide_content.get("title")
+                subtitle_obj = slide_content.get("subtitle")
+                body_obj = slide_content.get("body")
+                
+                title_text = title_obj.get("content", "") if isinstance(title_obj, dict) else (str(title_obj) if title_obj else "")
+                subtitle_text = subtitle_obj.get("content", "") if isinstance(subtitle_obj, dict) else (str(subtitle_obj) if subtitle_obj else "")
+                body_text = body_obj.get("content", "") if isinstance(body_obj, dict) else (str(body_obj) if body_obj else "")
+                
+                elements_count = sum(1 for elem in [title_text, subtitle_text, body_text] if elem)
+                elements_list = []
+                if title_text:
+                    elements_list.append("Title")
+                if subtitle_text:
+                    elements_list.append("Subtitle")
+                if body_text:
+                    elements_list.append("Body")
+                elements_str = " + ".join(elements_list) if elements_list else "None"
+                print(f"         📄 Copy elements: {elements_count} ({elements_str})")
+                if title_text:
+                    print(f"            Title: {title_text[:60]}{'...' if len(title_text) > 60 else ''}")
+                if subtitle_text and not title_text:
+                    print(f"            Subtitle: {subtitle_text[:60]}{'...' if len(subtitle_text) > 60 else ''}")
+                if body_text and not title_text and not subtitle_text:
+                    print(f"            Body: {body_text[:60]}{'...' if len(body_text) > 60 else ''} ({len(body_text)} chars)")
                 
                 post_copy_results.append({
                     "slide_number": slide_number,
@@ -1854,7 +2385,15 @@ def main() -> int:
                 })
 
                 # Print detailed slide copy information
-                print_slide_copy_details(slide_content, slide_info, slide_number)
+                try:
+                    print_slide_copy_details(slide_content, slide_info, slide_number)
+                except Exception as detail_exc:
+                    print(f"         ⚠️  WARNING: Error printing slide details: {detail_exc}")
+                    print(f"         ℹ️  Slide copy is valid, continuing with next slide...")
+                    import traceback
+                    if os.getenv("DEBUG", "").lower() in ("1", "true", "yes"):
+                        print(f"         🔍 Debug traceback:")
+                        traceback.print_exc()
 
                 # Save individual slide content
                 post_dir = article_output_dir / brief.post_id
@@ -1863,7 +2402,14 @@ def main() -> int:
                     json.dumps(slide_content, indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
+                print(f"         💾 Saved: {slide_content_path.name}")
 
+            # Summary of matching process
+            print(f"\n      📊 Matching Summary:")
+            print(f"         ✅ Matched: {matched_count}/{len(slides)} slides")
+            if unmatched_count > 0:
+                print(f"         ❌ Unmatched: {unmatched_count}/{len(slides)} slides")
+            
             # Save complete post copy result
             post_dir = article_output_dir / brief.post_id
             post_copy_path = post_dir / "post_copy.json"
@@ -1871,12 +2417,27 @@ def main() -> int:
                 json.dumps(post_copy_result, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-            print(f"      ✓ Post copy saved: {post_copy_path}")
+            print(f"\n      ✅ Post copy processing complete!")
+            print(f"         • Total slides processed: {len(post_copy_results)}")
+            print(f"         • Files saved: post_copy.json + {len(post_copy_results)} slide content file(s)")
+            print(f"         • Output path: {post_copy_path}")
 
         except Exception as exc:
             error_msg = str(exc)
+            error_type = type(exc).__name__
+            import traceback
+            error_traceback = traceback.format_exc()
             print(f"      ⚠️  WARNING: {error_msg}")
             print(f"      ℹ️  Skipping this post and continuing...")
+            
+            phase4_errors.append({
+                "phase": "Phase 4: Copywriting",
+                "type": error_type,
+                "message": f"{brief.post_id}: {error_msg}",
+                "traceback": error_traceback,
+                "timestamp": time.time(),
+                "post_id": brief.post_id,
+            })
             # Continue to next post instead of returning 1
 
         all_copy_results.append({
@@ -1939,8 +2500,20 @@ def main() -> int:
         )
 
         print(f"      ✓ {len(post_copy_results)} slide(s) processed for {brief.post_id}")
-
+    
+    phase4_end_time = time.time()
     total_slides = sum(len(r.get("slide_contents", [])) if isinstance(r.get("slide_contents"), list) else 0 for r in all_copy_results)
+    execution_metrics["phase_timings"]["Phase 4: Copywriting"].update({
+        "end_time": phase4_end_time,
+        "duration": phase4_end_time - phase4_start_time,
+        "status": "completed" if all_copy_results else "failed",
+        "details": f"Generated copy for {total_slides} slide(s) across {len(all_copy_results)} post(s), {len(phase4_errors)} errors, {len(phase4_warnings)} warnings",
+    })
+    execution_metrics["errors"].extend(phase4_errors)
+    execution_metrics["warnings"].extend(phase4_warnings)
+    execution_metrics["items_processed"]["posts"]["count"] = len(all_copy_results)
+    execution_metrics["items_processed"]["slides"]["count"] = total_slides
+    
     print(f"\n   ✓ {total_slides} total slide(s) processed successfully")
 
     # =====================================================================
@@ -2114,8 +2687,13 @@ def main() -> int:
     except Exception as exc:
         print(f"   ⚠️  Error verifying database: {exc}")
 
+    # Finalize execution metrics
+    pipeline_end_time = time.time()
+    execution_metrics["pipeline_end_time"] = pipeline_end_time
+    
     # Generate comprehensive workflow documentation
     print("\n19. Generating workflow documentation...")
+    doc_path = None
     try:
         doc_path = generate_workflow_documentation(
             trace_id=trace_id,
@@ -2125,10 +2703,39 @@ def main() -> int:
             all_copy_results=all_copy_results,
             logger=logger,
             article_output_dir=article_output_dir,
+            execution_metrics=execution_metrics,
         )
         print(f"   ✓ Workflow documentation generated successfully")
+        print(f"   ✓ Path: {doc_path}")
     except Exception as exc:
-        print(f"   ⚠️  WARNING: Error generating documentation: {exc}")
+        import traceback
+        error_traceback = traceback.format_exc()
+        error_message = f"Error generating documentation: {str(exc)}"
+        print(f"   ❌ ERROR: {error_message}")
+        print(f"   📝 Full traceback:")
+        print(f"   {error_traceback}")
+        
+        # Log this as an error in metrics
+        execution_metrics["errors"].append({
+            "phase": "Documentation Generation",
+            "type": type(exc).__name__,
+            "message": error_message,
+            "traceback": error_traceback,
+            "timestamp": time.time(),
+        })
+        
+        # Try to save execution metrics even if documentation fails
+        try:
+            metrics_path = article_output_dir / "execution_metrics.json"
+            metrics_path.write_text(
+                json.dumps(execution_metrics, indent=2, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+            print(f"   ✓ Execution metrics saved to: {metrics_path}")
+        except Exception as metrics_error:
+            print(f"   ⚠️  WARNING: Failed to save execution metrics: {metrics_error}")
+        
+        # Don't return error code - documentation failure shouldn't fail the whole pipeline
         print(f"   ℹ️  Continuing anyway...")
 
     print("\n" + "=" * 70)
@@ -2139,6 +2746,17 @@ def main() -> int:
     print(f"📈 Total slides processed: {total_slides}")
     print(f"📋 Total briefs: {len(briefs)}")
     print(f"📖 Total narrative structures: {len(narrative_results)}")
+    
+    # Print execution summary
+    total_duration = pipeline_end_time - pipeline_start_time
+    print(f"\n⏱️  EXECUTION SUMMARY:")
+    print(f"   • Total pipeline duration: {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")
+    print(f"   • Errors: {len(execution_metrics['errors'])}")
+    print(f"   • Warnings: {len(execution_metrics['warnings'])}")
+    if doc_path:
+        print(f"   • Documentation: {doc_path}")
+    else:
+        print(f"   • Documentation: Failed to generate")
 
     return 0
 
