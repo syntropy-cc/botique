@@ -18,6 +18,62 @@ if TYPE_CHECKING:
     from ..core.llm_logger import LLMLogger
 
 
+def _build_template_context_block(template) -> str:
+    """
+    Build detailed template context block for a specific slide.
+    
+    Formats all template attributes for display in the copywriter prompt.
+    
+    Args:
+        template: TextualTemplate instance
+    
+    Returns:
+        Formatted string block with template details
+    """
+    lines = []
+    lines.append("    Template Context:")
+    
+    # Detailed description
+    if template.detailed_description:
+        lines.append(f"      - Detailed Description: {template.detailed_description}")
+    
+    # Structure (emphasize it's conceptual)
+    if template.structure:
+        lines.append(f"      - Structure: `{template.structure}` (conceptual guide, not literal text)")
+    
+    # Length range
+    if template.length_range:
+        lines.append(f"      - Length: {template.length_range[0]}-{template.length_range[1]} characters")
+    
+    # Tone
+    if template.tone:
+        lines.append(f"      - Tone: {template.tone}")
+    
+    # Creative guidance
+    if template.creative_guidance:
+        lines.append(f"      - Creative Guidance: {template.creative_guidance}")
+    
+    # Interpretation notes
+    if template.interpretation_notes:
+        lines.append(f"      - Interpretation Notes: {template.interpretation_notes}")
+    
+    # Usage examples
+    if template.usage_examples:
+        lines.append("      - Usage Examples (creative variations for inspiration):")
+        for idx, example in enumerate(template.usage_examples, 1):
+            lines.append(f"        {idx}. \"{example}\"")
+    
+    # What to avoid
+    if template.what_to_avoid:
+        lines.append(f"      - What to Avoid: {template.what_to_avoid}")
+    
+    # Basic example (legacy)
+    if template.example:
+        lines.append(f"      - Basic Example: \"{template.example}\"")
+    
+    return "\n".join(lines) + "\n" if lines else ""
+
+
 def _build_slide_insights_block(brief: CoherenceBrief, slide_info: Dict[str, Any]) -> str:
     """
     Build formatted insights block for a specific slide.
@@ -334,6 +390,13 @@ class Copywriter:
             copy_direction = slide.get("copy_direction", "")
             visual_direction = slide.get("visual_direction", "")
             
+            # Get template details for this slide
+            template_details = ""
+            if template_id and template_id != "N/A":
+                template = template_library.get_template(template_id)
+                if template:
+                    template_details = self._build_template_context_block(template)
+            
             # Content slots
             content_slots = slide.get("content_slots", {})
             content_slots_str = ""
@@ -361,6 +424,7 @@ class Copywriter:
                 f"    Key Elements: {', '.join(slide.get('key_elements', []))}\n"
                 f"    Insights Referenced: {', '.join(slide.get('insights_referenced', []))}\n"
                 f"    Transition: {slide.get('transition_to_next', 'N/A (last slide)' if slide_num == len(slides_info) else 'N/A')}\n"
+                f"{template_details}"
             )
         
         slides_context_block = "\n".join(slides_context_lines)

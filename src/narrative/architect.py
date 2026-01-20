@@ -170,18 +170,41 @@ class NarrativeArchitect:
             # Try to parse JSON to see structure before validation
             try:
                 import json
-                parsed_preview = json.loads(raw_response)
-                logger_debug.info(f"Parsed JSON has keys: {list(parsed_preview.keys())}")
-                if "slides" in parsed_preview and len(parsed_preview["slides"]) > 0:
-                    first_slide_keys = list(parsed_preview["slides"][0].keys())
-                    logger_debug.info(f"First slide has keys: {first_slide_keys}")
-                    logger_debug.info(f"First slide content: {json.dumps(parsed_preview['slides'][0], indent=2)[:1000]}")
+                # Check if raw_response is empty or whitespace
+                if not raw_response or not raw_response.strip():
+                    logger_debug.warning("Raw response is empty or contains only whitespace")
+                    logger_debug.warning("Skipping JSON preview - validation will handle this")
                 else:
-                    logger_debug.warning(f"No slides found in response or slides array is empty")
-                    if "slides" in parsed_preview:
-                        logger_debug.warning(f"Slides array length: {len(parsed_preview['slides'])}")
+                    # Try to parse with parse_json_safely first to handle markdown fences
+                    from ..core.utils import parse_json_safely
+                    try:
+                        parsed_preview = parse_json_safely(raw_response)
+                        logger_debug.info(f"Parsed JSON has keys: {list(parsed_preview.keys())}")
+                        if "slides" in parsed_preview and len(parsed_preview["slides"]) > 0:
+                            first_slide_keys = list(parsed_preview["slides"][0].keys())
+                            logger_debug.info(f"First slide has keys: {first_slide_keys}")
+                            logger_debug.info(f"First slide content: {json.dumps(parsed_preview['slides'][0], indent=2)[:1000]}")
+                        else:
+                            logger_debug.warning(f"No slides found in response or slides array is empty")
+                            if "slides" in parsed_preview:
+                                logger_debug.warning(f"Slides array length: {len(parsed_preview['slides'])}")
+                    except ValueError as parse_safe_error:
+                        # If parse_json_safely fails, try direct json.loads as fallback
+                        try:
+                            parsed_preview = json.loads(raw_response.strip())
+                            logger_debug.info(f"Parsed JSON (direct parse) has keys: {list(parsed_preview.keys())}")
+                        except json.JSONDecodeError as json_error:
+                            logger_debug.warning(f"Could not parse JSON preview: {parse_safe_error}, direct parse: {json_error}")
+                            logger_debug.warning(f"Raw response preview (first 500 chars): {raw_response[:500]}")
+                            # Don't raise - let validation handle the error
             except Exception as parse_error:
                 logger_debug.warning(f"Could not parse JSON preview: {parse_error}")
+                # Log raw response snippet for debugging
+                if raw_response:
+                    logger_debug.warning(f"Raw response preview (first 500 chars): {raw_response[:500]}")
+                else:
+                    logger_debug.warning("Raw response is empty or None")
+                # Don't raise - let validation handle the error properly
         except Exception as llm_error:
             # If LLM call itself fails, propagate but include context
             import logging

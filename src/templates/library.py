@@ -119,10 +119,42 @@ class TemplateLibrary:
             
             for template in by_type[module_type]:
                 lines.append(f"- **{template.id}**: {template.function}")
-                lines.append(f"  - Structure: `{template.structure}`")
+                
+                # Detailed description (comprehensive explanation)
+                if template.detailed_description:
+                    lines.append(f"  - Detailed Description: {template.detailed_description}")
+                
+                # Structure (conceptual guide, not literal)
+                lines.append(f"  - Structure: `{template.structure}` (conceptual guide, not literal text)")
+                
+                # Length range
                 lines.append(f"  - Length: {template.length_range[0]}-{template.length_range[1]} characters")
+                
+                # Tone
                 lines.append(f"  - Tone: {template.tone}")
-                lines.append(f"  - Example: \"{template.example}\"")
+                
+                # Creative guidance (prominently displayed)
+                if template.creative_guidance:
+                    lines.append(f"  - Creative Guidance: {template.creative_guidance}")
+                
+                # Interpretation notes
+                if template.interpretation_notes:
+                    lines.append(f"  - Interpretation Notes: {template.interpretation_notes}")
+                
+                # Usage examples (numbered list)
+                if template.usage_examples:
+                    lines.append("  - Usage Examples:")
+                    for idx, example in enumerate(template.usage_examples, 1):
+                        lines.append(f"    {idx}. \"{example}\"")
+                
+                # What to avoid (warning/note)
+                if template.what_to_avoid:
+                    lines.append(f"  - Avoid: {template.what_to_avoid}")
+                
+                # Basic example (legacy)
+                if template.example:
+                    lines.append(f"  - Basic Example: \"{template.example}\"")
+                
                 lines.append("")
         
         return "\n".join(lines)

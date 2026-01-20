@@ -105,7 +105,15 @@ class TemplateSelector:
             template.function or "",
             template.structure or "",
             " ".join(template.keywords or []),
+            template.detailed_description or "",
+            template.creative_guidance or "",
+            template.interpretation_notes or "",
         ]
+        # Add first 2-3 usage examples for richer context
+        if template.usage_examples:
+            usage_text = " ".join(template.usage_examples[:3])
+            parts.append(usage_text)
+        
         return " ".join([p for p in parts if p])
     
     def select_template(
@@ -406,10 +414,13 @@ class TemplateSelector:
         Calculate semantic similarity score using fallback method (0.0-1.0).
         
         Uses multiple matching strategies when embeddings are not available:
-        1. Semantic description matching (primary - 50%)
-        2. Function matching (25%)
-        3. Tone matching (15%)
-        4. Keyword matching (10%)
+        1. Semantic description matching (35%)
+        2. Detailed description matching (20%)
+        3. Function matching (15%)
+        4. Creative guidance matching (12%)
+        5. Interpretation notes matching (8%)
+        6. Tone matching (7%)
+        7. Keyword matching (3%)
         
         Args:
             template: Template to evaluate
@@ -425,30 +436,48 @@ class TemplateSelector:
         # Normalize text for comparison
         slide_text = self._normalize_text(slide_description)
         template_description = self._normalize_text(template.semantic_description or "")
+        template_detailed = self._normalize_text(template.detailed_description or "")
         template_function = self._normalize_text(template.function or "")
+        template_creative = self._normalize_text(template.creative_guidance or "")
+        template_interpretation = self._normalize_text(template.interpretation_notes or "")
         template_tone = self._normalize_text(template.tone or "")
         brief_tone = self._normalize_text(tone)
         
-        # 1. Semantic description matching (50% weight)
+        # 1. Semantic description matching (35% weight)
         if template_description:
             description_score = self._text_similarity(slide_text, template_description)
-            score += description_score * 0.5
+            score += description_score * 0.35
         
-        # 2. Function matching (25% weight)
+        # 2. Detailed description matching (20% weight)
+        if template_detailed:
+            detailed_score = self._text_similarity(slide_text, template_detailed)
+            score += detailed_score * 0.20
+        
+        # 3. Function matching (15% weight)
         if template_function:
             function_score = self._text_similarity(slide_text, template_function)
-            score += function_score * 0.25
+            score += function_score * 0.15
         
-        # 3. Tone matching (15% weight)
+        # 4. Creative guidance matching (12% weight)
+        if template_creative:
+            creative_score = self._text_similarity(slide_text, template_creative)
+            score += creative_score * 0.12
+        
+        # 5. Interpretation notes matching (8% weight)
+        if template_interpretation:
+            interpretation_score = self._text_similarity(slide_text, template_interpretation)
+            score += interpretation_score * 0.08
+        
+        # 6. Tone matching (7% weight)
         if template_tone and brief_tone:
             tone_score = self._text_similarity(template_tone, brief_tone)
-            score += tone_score * 0.15
+            score += tone_score * 0.07
         
-        # 4. Keyword matching (10% weight)
+        # 7. Keyword matching (3% weight)
         template_keywords = template.keywords or []
         if template_keywords:
             keyword_score = self._keyword_similarity(slide_text, template_keywords)
-            score += keyword_score * 0.1
+            score += keyword_score * 0.03
         
         # Ensure score is between 0.0 and 1.0
         return min(score, 1.0)

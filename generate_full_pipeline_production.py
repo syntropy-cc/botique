@@ -599,6 +599,28 @@ def generate_workflow_documentation(
                         if template_justification:
                             justification_preview = template_justification[:200] + "..." if len(template_justification) > 200 else template_justification
                             lines.append(f"  - Justification: {justification_preview}")
+                        
+                        # Show template enrichment info
+                        try:
+                            from src.templates.library import TemplateLibrary
+                            template_library_doc = TemplateLibrary()
+                            template = template_library_doc.get_template(template_id)
+                            if template:
+                                enrichment_features = []
+                                if template.detailed_description:
+                                    enrichment_features.append("detailed_description")
+                                if template.creative_guidance:
+                                    enrichment_features.append("creative_guidance")
+                                if template.usage_examples:
+                                    enrichment_features.append(f"{len(template.usage_examples)} usage_examples")
+                                if template.interpretation_notes:
+                                    enrichment_features.append("interpretation_notes")
+                                if template.what_to_avoid:
+                                    enrichment_features.append("what_to_avoid")
+                                if enrichment_features:
+                                    lines.append(f"  - Template Context Features: {', '.join(enrichment_features)}")
+                        except Exception:
+                            pass
                     else:
                         status_icon = "✗"
                         lines.append(f"- **Slide {slide_num}** ({template_type_display}): *(no template selected)* ⚠️")
@@ -618,11 +640,15 @@ def generate_workflow_documentation(
             if num is None or num == "?":
                 return None
             try:
+                # Tenta converter para int
                 return int(num)
             except (ValueError, TypeError):
+                # Se não conseguir, tenta converter string para int
+                if isinstance(num, str) and num.isdigit():
+                    return int(num)
                 return num
         
-        # Create maps for easy lookup
+        # Create maps for easy lookup with multiple key variations
         slides_narrative = {}
         if narrative_payload and isinstance(narrative_payload, dict):
             slides_list = narrative_payload.get("slides", [])
@@ -637,6 +663,11 @@ def generate_workflow_documentation(
                             # Also store with original value if different
                             if slide_num != slide_num_raw:
                                 slides_narrative[slide_num_raw] = slide
+                            # Store with string/int variations for maximum compatibility
+                            if isinstance(slide_num_raw, str) and slide_num_raw.isdigit():
+                                slides_narrative[int(slide_num_raw)] = slide
+                            if isinstance(slide_num_raw, int):
+                                slides_narrative[str(slide_num_raw)] = slide
         
         slides_copy_map = {}
         if isinstance(slide_contents, list):
@@ -644,12 +675,18 @@ def generate_workflow_documentation(
                 if isinstance(slide_result, dict):
                     slide_num_raw = slide_result.get("slide_number")
                     slide_num = normalize_slide_number(slide_num_raw)
-                    if slide_num is not None:
+                    slide_content = slide_result.get("slide_content")
+                    if slide_num is not None and slide_content is not None:
                         # Store with normalized key
-                        slides_copy_map[slide_num] = slide_result.get("slide_content")
+                        slides_copy_map[slide_num] = slide_content
                         # Also store with original value if different
                         if slide_num != slide_num_raw:
-                            slides_copy_map[slide_num_raw] = slide_result.get("slide_content")
+                            slides_copy_map[slide_num_raw] = slide_content
+                        # Store with string/int variations for maximum compatibility
+                        if isinstance(slide_num_raw, str) and slide_num_raw.isdigit():
+                            slides_copy_map[int(slide_num_raw)] = slide_content
+                        if isinstance(slide_num_raw, int):
+                            slides_copy_map[str(slide_num_raw)] = slide_content
         
         # Get all slide numbers in order (normalize for comparison)
         all_slide_nums_raw = set(list(slides_narrative.keys()) + list(slides_copy_map.keys()))
@@ -663,7 +700,7 @@ def generate_workflow_documentation(
         all_slide_nums = sorted(all_slide_nums_normalized)
         
         for slide_num in all_slide_nums:
-            # Try normalized lookup first, then fallback to raw
+            # Try normalized lookup first, then fallback to raw, then iterate
             slide_narrative = slides_narrative.get(slide_num)
             if not slide_narrative:
                 # Try to find by iterating through keys
@@ -672,11 +709,19 @@ def generate_workflow_documentation(
                         slide_narrative = slides_narrative[key]
                         break
             
+            # Robust lookup for slide_content with multiple strategies
             slide_content = slides_copy_map.get(slide_num)
             if not slide_content:
-                # Try to find by iterating through keys
+                # Strategy 1: Try with original raw value if different
                 for key in slides_copy_map.keys():
                     if normalize_slide_number(key) == slide_num:
+                        slide_content = slides_copy_map[key]
+                        break
+            if not slide_content:
+                # Strategy 2: Try to find by iterating through all keys
+                for key in slides_copy_map.keys():
+                    key_normalized = normalize_slide_number(key)
+                    if key_normalized is not None and key_normalized == slide_num:
                         slide_content = slides_copy_map[key]
                         break
             
@@ -697,13 +742,45 @@ def generate_workflow_documentation(
                 if template_id:
                     lines.append(f"**Template ID:** {template_id}")
                     lines.append("")
+                    
+                    # Load template details for enriched documentation
+                    try:
+                        from src.templates.library import TemplateLibrary
+                        template_library = TemplateLibrary()
+                        template = template_library.get_template(template_id)
+                        if template:
+                            lines.append("**Template Details:**")
+                            lines.append("")
+                            if template.detailed_description:
+                                lines.append(f"- **Detailed Description:** {template.detailed_description}")
+                                lines.append("")
+                            if template.creative_guidance:
+                                lines.append(f"- **Creative Guidance:** {template.creative_guidance}")
+                                lines.append("")
+                            if template.interpretation_notes:
+                                lines.append(f"- **Interpretation Notes:** {template.interpretation_notes}")
+                                lines.append("")
+                            if template.usage_examples:
+                                lines.append(f"- **Usage Examples:** {len(template.usage_examples)} variations")
+                                for idx, example in enumerate(template.usage_examples[:3], 1):  # Show first 3
+                                    lines.append(f"  {idx}. \"{example[:100]}{'...' if len(example) > 100 else ''}\"")
+                                if len(template.usage_examples) > 3:
+                                    lines.append(f"  ... and {len(template.usage_examples) - 3} more")
+                                lines.append("")
+                            if template.what_to_avoid:
+                                lines.append(f"- **What to Avoid:** {template.what_to_avoid}")
+                                lines.append("")
+                    except Exception:
+                        # Silently fail if template details can't be loaded
+                        pass
+                    
                 if template_justification:
                     lines.append("**Template Justification:**")
                     lines.append("")
                     lines.append(template_justification[:400] + ("..." if len(template_justification) > 400 else ""))
                     lines.append("")
                 if template_confidence is not None:
-                    lines.append(f"**Template Confidence:** {template_confidence}")
+                    lines.append(f"**Template Confidence:** {template_confidence:.2f}")
                     lines.append("")
                 
                 lines.append(f"**Purpose:** {slide_narrative.get('purpose', 'N/A')}")
@@ -974,7 +1051,16 @@ def generate_workflow_documentation(
     lines.append("")
     lines.append("1. **Narrative Architect** generates narrative structure with `template_type` and `value_subtype`")
     lines.append("2. **Template Selector** uses embeddings (or fallback method) to select specific `template_id`")
-    lines.append("3. **Copywriter** uses `template_id` and template structures to generate copy")
+    lines.append("   - Uses `detailed_description`, `creative_guidance`, `interpretation_notes`, and `usage_examples` for enhanced semantic matching")
+    lines.append("   - Fallback method weights: semantic_description (35%), detailed_description (20%), function (15%), creative_guidance (12%), interpretation_notes (8%), tone (7%), keywords (3%)")
+    lines.append("3. **Copywriter** receives comprehensive template context for each slide:")
+    lines.append("   - **Detailed Description**: What the template achieves, its narrative purpose, when to use it")
+    lines.append("   - **Structure**: Conceptual pattern (NOT literal text to copy)")
+    lines.append("   - **Creative Guidance**: How to use the template creatively")
+    lines.append("   - **Interpretation Notes**: How to interpret placeholders conceptually")
+    lines.append("   - **Usage Examples**: 3-5 creative variations (inspiration, not prescriptive)")
+    lines.append("   - **What to Avoid**: Common mistakes and literal interpretations")
+    lines.append("   - The copywriter uses this context to create original, engaging copy that captures the template's essence without copying its literal format")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -2058,6 +2144,10 @@ def main() -> int:
                 "method": "unknown",
             }
             
+            # Load template library for enriched information
+            from src.templates.library import TemplateLibrary
+            template_library = TemplateLibrary()
+            
             confidences = []
             for slide in slides:
                 slide_num = slide.get("slide_number")
@@ -2081,6 +2171,26 @@ def main() -> int:
                     })
                     template_type_display = f"{template_type}/{value_subtype}" if value_subtype else template_type
                     print(f"      ✓ Slide {slide_num} ({template_type_display}): {template_id} (confidence: {template_confidence:.2f})")
+                    
+                    # Show template enrichment details
+                    template = template_library.get_template(template_id)
+                    if template:
+                        has_detailed_desc = bool(template.detailed_description)
+                        has_creative_guidance = bool(template.creative_guidance)
+                        has_usage_examples = bool(template.usage_examples)
+                        has_what_to_avoid = bool(template.what_to_avoid)
+                        enrichment_items = []
+                        if has_detailed_desc:
+                            enrichment_items.append("detailed_description")
+                        if has_creative_guidance:
+                            enrichment_items.append("creative_guidance")
+                        if has_usage_examples:
+                            enrichment_items.append(f"{len(template.usage_examples)} usage_examples")
+                        if has_what_to_avoid:
+                            enrichment_items.append("what_to_avoid")
+                        if enrichment_items:
+                            print(f"        └─ Template enrichment: {', '.join(enrichment_items)}")
+                    
                     if template_justification:
                         justification_preview = template_justification[:150] + "..." if len(template_justification) > 150 else template_justification
                         print(f"        └─ {justification_preview}")
@@ -2223,7 +2333,68 @@ def main() -> int:
     for result_idx, result in enumerate(narrative_results, 1):
         brief = result["brief"]
         narrative_payload = result["narrative_payload"]
+        
+        # Validate narrative_payload structure before processing
+        if not isinstance(narrative_payload, dict):
+            error_msg = f"Invalid narrative_payload type: expected dict, got {type(narrative_payload).__name__}"
+            print(f"      ❌ ERROR: {error_msg}")
+            phase4_errors.append({
+                "phase": "Phase 4: Copywriting",
+                "type": "ValidationError",
+                "message": f"{brief.post_id}: {error_msg}",
+                "timestamp": time.time(),
+                "post_id": brief.post_id,
+            })
+            continue
+        
         slides = narrative_payload.get("slides", [])
+        
+        # Validate slides structure
+        if not isinstance(slides, list):
+            error_msg = f"Invalid slides type: expected list, got {type(slides).__name__}"
+            print(f"      ❌ ERROR: {error_msg}")
+            phase4_errors.append({
+                "phase": "Phase 4: Copywriting",
+                "type": "ValidationError",
+                "message": f"{brief.post_id}: {error_msg}",
+                "timestamp": time.time(),
+                "post_id": brief.post_id,
+            })
+            continue
+        
+        if len(slides) == 0:
+            print(f"      ⚠️  WARNING: No slides found in narrative_payload for {brief.post_id}")
+            phase4_warnings.append({
+                "phase": "Phase 4: Copywriting",
+                "message": f"{brief.post_id}: No slides found in narrative_payload",
+                "timestamp": time.time(),
+            })
+            continue
+        
+        # Validate and normalize slide_numbers
+        for slide_idx, slide_info in enumerate(slides, 1):
+            if not isinstance(slide_info, dict):
+                print(f"      ⚠️  WARNING: Slide {slide_idx} is not a dict, skipping validation")
+                continue
+            
+            # Ensure slide_number exists and is valid
+            slide_number = slide_info.get("slide_number")
+            if slide_number is None:
+                # Auto-assign slide_number based on index
+                slide_number = slide_idx
+                slide_info["slide_number"] = slide_number
+                print(f"      ℹ️  Auto-assigned slide_number {slide_number} to slide at index {slide_idx}")
+            elif not isinstance(slide_number, (int, str)):
+                # Normalize slide_number
+                try:
+                    slide_number = int(slide_number)
+                    slide_info["slide_number"] = slide_number
+                    print(f"      ℹ️  Normalized slide_number to {slide_number} for slide at index {slide_idx}")
+                except (ValueError, TypeError):
+                    # Fallback to index
+                    slide_number = slide_idx
+                    slide_info["slide_number"] = slide_number
+                    print(f"      ⚠️  WARNING: Invalid slide_number type, using index {slide_idx}")
 
         print(f"\n   Post {result_idx}/{len(narrative_results)}: {brief.post_id} ({len(slides)} slides)")
 
@@ -2237,15 +2408,35 @@ def main() -> int:
             
             # Pre-flight checks
             slides_without_template = []
+            template_context_count = 0
+            from src.templates.library import TemplateLibrary
+            template_library = TemplateLibrary()
+            
             for slide_info in slides:
                 template_id = slide_info.get("template_id")
                 if not template_id:
                     slide_num = slide_info.get("slide_number", "?")
                     slides_without_template.append(slide_num)
                     print(f"      ⚠️  WARNING: Slide {slide_num} missing template_id before copywriting")
+                else:
+                    # Check if template has enrichment details
+                    template = template_library.get_template(template_id)
+                    if template:
+                        has_enrichment = bool(
+                            template.detailed_description or
+                            template.creative_guidance or
+                            template.usage_examples or
+                            template.what_to_avoid or
+                            template.interpretation_notes
+                        )
+                        if has_enrichment:
+                            template_context_count += 1
             
             if slides_without_template:
                 print(f"      ⚠️  Found {len(slides_without_template)} slide(s) without template_id: {slides_without_template}")
+            
+            if template_context_count > 0:
+                print(f"      ✓ {template_context_count}/{len(slides)} slides have enriched template context (detailed_description, creative_guidance, usage_examples, etc.)")
 
             # Capture warnings and display them as informational messages
             print(f"\n      🤖 Calling LLM to generate copy for {len(slides)} slides...")
@@ -2282,14 +2473,18 @@ def main() -> int:
             # Normalize slide_numbers to int for consistent matching
             def normalize_slide_number(num):
                 """Normalize slide_number to int for consistent dict lookups."""
-                if num is None:
+                if num is None or num == "?":
                     return None
                 try:
+                    # Tenta converter para int
                     return int(num)
                 except (ValueError, TypeError):
+                    # Se não conseguir, tenta converter string para int
+                    if isinstance(num, str) and num.isdigit():
+                        return int(num)
                     return num
             
-            # Build dictionary with normalized keys (store with both int and original value as keys for compatibility)
+            # Build dictionary with normalized keys (store with multiple key variations for robust lookup)
             print(f"\n      🔍 Matching {len(slides_copy)} copy response(s) with {len(slides)} narrative slide(s)...")
             slides_copy_dict = {}
             for s in slides_copy:
@@ -2297,10 +2492,16 @@ def main() -> int:
                 if slide_num is not None:
                     normalized = normalize_slide_number(slide_num)
                     # Store with normalized (int) key as primary
-                    slides_copy_dict[normalized] = s
+                    if normalized is not None:
+                        slides_copy_dict[normalized] = s
                     # Also store with original value if different (for backwards compatibility)
                     if normalized != slide_num:
                         slides_copy_dict[slide_num] = s
+                    # Store with string/int variations for maximum compatibility
+                    if isinstance(slide_num, str) and slide_num.isdigit():
+                        slides_copy_dict[int(slide_num)] = s
+                    if isinstance(slide_num, int):
+                        slides_copy_dict[str(slide_num)] = s
             
             copy_slide_numbers = sorted([normalize_slide_number(s.get("slide_number")) for s in slides_copy if s.get("slide_number") is not None])
             narrative_slide_numbers = sorted([normalize_slide_number(s.get("slide_number", idx)) for idx, s in enumerate(slides, 1)])
@@ -2309,6 +2510,7 @@ def main() -> int:
             
             matched_count = 0
             unmatched_count = 0
+            unmatched_slides = []
             
             for slide_idx, slide_info in enumerate(slides, 1):
                 slide_number_raw = slide_info.get("slide_number", slide_idx)
@@ -2318,16 +2520,48 @@ def main() -> int:
                 
                 print(f"\n      📝 Processing Slide {slide_number} ({template_type})...")
                 
-                # Try multiple lookup strategies
-                slide_content = slides_copy_dict.get(slide_number)
-                lookup_strategy = "normalized"
-                if not slide_content and slide_number != slide_number_raw:
-                    # Try with original value if different
+                # Try multiple lookup strategies with robust fallback
+                slide_content = None
+                lookup_strategy = None
+                
+                # Strategy 1: Normalized value
+                if slide_number is not None:
+                    slide_content = slides_copy_dict.get(slide_number)
+                    if slide_content:
+                        lookup_strategy = "normalized"
+                
+                # Strategy 2: Original raw value
+                if not slide_content and slide_number_raw != slide_number:
                     slide_content = slides_copy_dict.get(slide_number_raw)
-                    lookup_strategy = "original"
+                    if slide_content:
+                        lookup_strategy = "original"
+                
+                # Strategy 3: Iterate through all keys to find match
+                if not slide_content:
+                    for key, value in slides_copy_dict.items():
+                        if normalize_slide_number(key) == slide_number:
+                            slide_content = value
+                            lookup_strategy = "iterated"
+                            break
+                
+                # Strategy 4: Fallback by index (if slide_number matches index)
+                if not slide_content and slide_idx <= len(slides_copy):
+                    # Try to match by position in array
+                    candidate = slides_copy[slide_idx - 1]
+                    candidate_slide_num = normalize_slide_number(candidate.get("slide_number"))
+                    if candidate_slide_num == slide_number:
+                        slide_content = candidate
+                        lookup_strategy = "index_fallback"
+                        print(f"         ⚠️  Found by index fallback (position {slide_idx})")
                 
                 if not slide_content:
                     unmatched_count += 1
+                    unmatched_slides.append({
+                        "slide_number": slide_number,
+                        "slide_number_raw": slide_number_raw,
+                        "slide_idx": slide_idx,
+                        "template_type": template_type,
+                    })
                     # Detailed logging for debugging
                     available_numbers = sorted(set(
                         normalize_slide_number(s.get("slide_number")) 
@@ -2352,7 +2586,7 @@ def main() -> int:
                 matched_count += 1
                 print(f"         ✅ Copy found (lookup: {lookup_strategy})")
                 
-                # Extract quick summary of copy content
+                # Extract copy content
                 title_obj = slide_content.get("title")
                 subtitle_obj = slide_content.get("subtitle")
                 body_obj = slide_content.get("body")
@@ -2361,6 +2595,92 @@ def main() -> int:
                 subtitle_text = subtitle_obj.get("content", "") if isinstance(subtitle_obj, dict) else (str(subtitle_obj) if subtitle_obj else "")
                 body_text = body_obj.get("content", "") if isinstance(body_obj, dict) else (str(body_obj) if body_obj else "")
                 
+                # Print full copy content in a clear format
+                print(f"\n         {'═' * 60}")
+                print(f"         📝 SLIDE {slide_number} COPY - {template_type}")
+                print(f"         {'═' * 60}")
+                
+                if title_text:
+                    print(f"\n         📰 TITLE:")
+                    # Print title with line breaks if needed
+                    title_lines = title_text.split('\n')
+                    for line in title_lines:
+                        print(f"            {line}")
+                    
+                    # Print emphasis if available
+                    if isinstance(title_obj, dict) and title_obj.get("emphasis"):
+                        emphasis = title_obj.get("emphasis", [])
+                        if emphasis:
+                            emphasis_str = ", ".join([f"'{e}'" for e in emphasis if isinstance(e, str)][:5])
+                            if len(emphasis) > 5:
+                                emphasis_str += f" ... (+{len(emphasis) - 5} more)"
+                            print(f"            💡 Emphasis: {emphasis_str}")
+                else:
+                    print(f"\n         📰 TITLE: (null)")
+                
+                if subtitle_text:
+                    print(f"\n         📄 SUBTITLE:")
+                    # Print subtitle with line breaks if needed
+                    subtitle_lines = subtitle_text.split('\n')
+                    for line in subtitle_lines:
+                        print(f"            {line}")
+                    
+                    # Print emphasis if available
+                    if isinstance(subtitle_obj, dict) and subtitle_obj.get("emphasis"):
+                        emphasis = subtitle_obj.get("emphasis", [])
+                        if emphasis:
+                            emphasis_str = ", ".join([f"'{e}'" for e in emphasis if isinstance(e, str)][:5])
+                            if len(emphasis) > 5:
+                                emphasis_str += f" ... (+{len(emphasis) - 5} more)"
+                            print(f"            💡 Emphasis: {emphasis_str}")
+                else:
+                    print(f"\n         📄 SUBTITLE: (null)")
+                
+                if body_text:
+                    print(f"\n         📝 BODY ({len(body_text)} chars):")
+                    # Print body with proper formatting
+                    body_lines = body_text.split('\n')
+                    for line in body_lines:
+                        print(f"            {line}")
+                    
+                    # Print emphasis if available
+                    if isinstance(body_obj, dict) and body_obj.get("emphasis"):
+                        emphasis = body_obj.get("emphasis", [])
+                        if emphasis:
+                            emphasis_str = ", ".join([f"'{e}'" for e in emphasis if isinstance(e, str)][:5])
+                            if len(emphasis) > 5:
+                                emphasis_str += f" ... (+{len(emphasis) - 5} more)"
+                            print(f"\n            💡 Emphasis: {emphasis_str}")
+                else:
+                    print(f"\n         📝 BODY: (null)")
+                
+                # Print copy guidelines if available
+                copy_guidelines = slide_content.get("copy_guidelines", {})
+                if copy_guidelines:
+                    headline_style = copy_guidelines.get("headline_style")
+                    body_style = copy_guidelines.get("body_style")
+                    if headline_style or body_style:
+                        print(f"\n         ✍️  COPY GUIDELINES:")
+                        if headline_style:
+                            print(f"            • Headline Style: {headline_style}")
+                        if body_style:
+                            print(f"            • Body Style: {body_style}")
+                
+                # Print CTA guidelines if available
+                cta_guidelines = slide_content.get("cta_guidelines")
+                if cta_guidelines and isinstance(cta_guidelines, dict):
+                    cta_type = cta_guidelines.get("type")
+                    cta_text = cta_guidelines.get("suggested_text")
+                    if cta_type or cta_text:
+                        print(f"\n         🎯 CTA GUIDELINES:")
+                        if cta_type:
+                            print(f"            • Type: {cta_type}")
+                        if cta_text:
+                            print(f"            • Suggested Text: {cta_text}")
+                
+                print(f"         {'═' * 60}")
+                
+                # Also print summary for quick reference
                 elements_count = sum(1 for elem in [title_text, subtitle_text, body_text] if elem)
                 elements_list = []
                 if title_text:
@@ -2370,30 +2690,40 @@ def main() -> int:
                 if body_text:
                     elements_list.append("Body")
                 elements_str = " + ".join(elements_list) if elements_list else "None"
-                print(f"         📄 Copy elements: {elements_count} ({elements_str})")
-                if title_text:
-                    print(f"            Title: {title_text[:60]}{'...' if len(title_text) > 60 else ''}")
-                if subtitle_text and not title_text:
-                    print(f"            Subtitle: {subtitle_text[:60]}{'...' if len(subtitle_text) > 60 else ''}")
-                if body_text and not title_text and not subtitle_text:
-                    print(f"            Body: {body_text[:60]}{'...' if len(body_text) > 60 else ''} ({len(body_text)} chars)")
+                print(f"         📊 Summary: {elements_count} element(s) ({elements_str})")
+                
+                # Show template context used for this slide
+                template_id = slide_info.get("template_id")
+                if template_id:
+                    template = template_library.get_template(template_id)
+                    if template:
+                        has_enrichment = bool(
+                            template.detailed_description or
+                            template.creative_guidance or
+                            template.usage_examples or
+                            template.what_to_avoid or
+                            template.interpretation_notes
+                        )
+                        if has_enrichment:
+                            enrichment_details = []
+                            if template.detailed_description:
+                                enrichment_details.append("detailed_description")
+                            if template.creative_guidance:
+                                enrichment_details.append("creative_guidance")
+                            if template.usage_examples:
+                                enrichment_details.append(f"{len(template.usage_examples)} examples")
+                            if template.what_to_avoid:
+                                enrichment_details.append("what_to_avoid")
+                            if template.interpretation_notes:
+                                enrichment_details.append("interpretation_notes")
+                            if enrichment_details:
+                                print(f"         🎨 Template context: {', '.join(enrichment_details)}")
                 
                 post_copy_results.append({
                     "slide_number": slide_number,
                     "slide_info": slide_info,
                     "slide_content": slide_content,
                 })
-
-                # Print detailed slide copy information
-                try:
-                    print_slide_copy_details(slide_content, slide_info, slide_number)
-                except Exception as detail_exc:
-                    print(f"         ⚠️  WARNING: Error printing slide details: {detail_exc}")
-                    print(f"         ℹ️  Slide copy is valid, continuing with next slide...")
-                    import traceback
-                    if os.getenv("DEBUG", "").lower() in ("1", "true", "yes"):
-                        print(f"         🔍 Debug traceback:")
-                        traceback.print_exc()
 
                 # Save individual slide content
                 post_dir = article_output_dir / brief.post_id
@@ -2404,11 +2734,69 @@ def main() -> int:
                 )
                 print(f"         💾 Saved: {slide_content_path.name}")
 
+            # Post-matching validation and fallback recovery
+            if unmatched_count > 0:
+                print(f"\n      ⚠️  WARNING: {unmatched_count} slide(s) não foram encontrados no matching inicial")
+                print(f"      🔍 Tentando matching alternativo para slides não encontrados...")
+                
+                # Try alternative matching for unmatched slides
+                for unmatched in unmatched_slides:
+                    slide_number = unmatched["slide_number"]
+                    slide_number_raw = unmatched["slide_number_raw"]
+                    slide_idx = unmatched["slide_idx"]
+                    
+                    # Find the corresponding slide_info
+                    slide_info = None
+                    for info in slides:
+                        if normalize_slide_number(info.get("slide_number", slide_idx)) == slide_number:
+                            slide_info = info
+                            break
+                    
+                    if not slide_info:
+                        continue
+                    
+                    # Strategy: Try to find by matching slide_number in copy response
+                    found_by_alternative = False
+                    for copy_slide in slides_copy:
+                        copy_slide_num = normalize_slide_number(copy_slide.get("slide_number"))
+                        if copy_slide_num == slide_number:
+                            # Found a match!
+                            post_copy_results.append({
+                                "slide_number": slide_number,
+                                "slide_info": slide_info,
+                                "slide_content": copy_slide,
+                            })
+                            matched_count += 1
+                            unmatched_count -= 1
+                            found_by_alternative = True
+                            print(f"         ✅ Slide {slide_number} encontrado por matching alternativo")
+                            break
+                    
+                    # If still not found, try by index as last resort
+                    if not found_by_alternative and slide_idx <= len(slides_copy):
+                        candidate = slides_copy[slide_idx - 1]
+                        # Only use if it's not already matched
+                        candidate_slide_num = normalize_slide_number(candidate.get("slide_number"))
+                        already_matched = any(
+                            normalize_slide_number(r.get("slide_number")) == candidate_slide_num
+                            for r in post_copy_results
+                        )
+                        if not already_matched:
+                            post_copy_results.append({
+                                "slide_number": slide_number,
+                                "slide_info": slide_info,
+                                "slide_content": candidate,
+                            })
+                            matched_count += 1
+                            unmatched_count -= 1
+                            print(f"         ✅ Slide {slide_number} encontrado por índice como último recurso")
+            
             # Summary of matching process
             print(f"\n      📊 Matching Summary:")
             print(f"         ✅ Matched: {matched_count}/{len(slides)} slides")
             if unmatched_count > 0:
                 print(f"         ❌ Unmatched: {unmatched_count}/{len(slides)} slides")
+                print(f"         ⚠️  Alguns slides podem não ter copy na documentação final")
             
             # Save complete post copy result
             post_dir = article_output_dir / brief.post_id

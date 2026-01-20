@@ -127,6 +127,18 @@ This block contains information for ALL slides. Each slide entry includes:
 - Key elements to emphasize
 - Insights referenced
 - Transition to next slide
+- Template Context: Complete template details including:
+  - Detailed Description: What the template achieves, its narrative purpose, when to use it
+  - Structure: Conceptual pattern (NOT literal text to copy)
+  - Length: Character range
+  - Tone: Recommended tone
+  - Creative Guidance: How to use the template creatively
+  - Interpretation Notes: How to interpret placeholders conceptually
+  - Usage Examples: 3-5 creative variations (inspiration, not prescriptive)
+  - What to Avoid: Common mistakes and literal interpretations
+  - Basic Example: Simple reference example
+
+For each slide, use its Template Context to understand how to creatively interpret the template while maintaining the narrative intent. The template context provides all the guidance you need to create original, engaging copy that captures the template's essence without copying its literal format.
 
 Generate copy that maintains narrative flow and consistency across all slides.
 ```
@@ -135,7 +147,14 @@ Generate copy that maintains narrative flow and consistency across all slides.
 ```
 {templates_reference}
 
-Each slide has a template_id assigned. Use the template structure as a base, adapting the content to the slide's specific context, copy_direction, and key_elements. The template provides the text structure (e.g., "What if [ideal scenario]?"), but you should fill it with content relevant to the slide.
+Each slide has a template_id assigned. The templates_reference above contains comprehensive information for each template, including:
+- Detailed Description: Explains what the template fundamentally achieves, its narrative purpose, when to use it
+- Creative Guidance: How to use the template creatively and avoid literal interpretation
+- Interpretation Notes: How to interpret placeholders and structure conceptually
+- Usage Examples: 3-5 creative examples showing varied approaches (NOT the only way to use the template)
+- What to Avoid: Common mistakes and literal interpretations to avoid
+
+CRITICAL: Templates are structural inspiration, NOT rigid rules. The structure field (e.g., "What if [ideal scenario]?") is a conceptual guide showing the template's pattern, not literal text to follow. Use the creative guidance and usage examples to inspire variations, adapt to your context, and create original copy that captures the template's essence without copying its literal format.
 ```
 
 ### CONSTRAINTS
@@ -146,6 +165,46 @@ Topics to exclude from the content
 REQUIRED ELEMENTS: {required_elements}
 Elements that must be included (e.g., "brand_handle", "professional_cta", "cta")
 ```
+
+---
+
+## CREATIVITY & ADAPTATION
+
+### Understanding Templates as Structural Inspiration
+
+Templates are NOT literal formulas to copy. They are structural patterns that guide your creative approach:
+
+1. **Structure is Conceptual**: The `structure` field (e.g., "Myth: [false] Reality: [truth]") shows the template's pattern concept, not literal text. For example:
+   - ❌ Literal: "Myth: AI replaces people. Reality: Amplifies capabilities."
+   - ✅ Creative: "AI doesn't replace people. It amplifies their capabilities."
+   - ✅ Creative: "Think automation eliminates jobs? It actually creates new roles."
+
+2. **Use Creative Guidance**: Each template includes `creative_guidance` explaining how to interpret and adapt the template creatively. This guidance is your primary reference for understanding the template's intent.
+
+3. **Study Usage Examples**: The `usage_examples` show varied approaches to the same template. These are inspiration, NOT prescriptive formats. Create your own variations based on the slide's specific context.
+
+4. **Interpret Placeholders Conceptually**: Placeholders like `[problem]`, `[solution]`, `[ideal scenario]` represent concepts to express creatively, not literal slots to fill. Think about what the placeholder represents conceptually and express it in varied ways.
+
+5. **Follow What to Avoid**: Each template includes `what_to_avoid` - common mistakes that lead to literal, formulaic copy. Heed these warnings to maintain creativity.
+
+6. **Balance Structure with Creativity**: 
+   - Understand the template's narrative purpose (from `detailed_description`)
+   - Capture the template's essence (its core intent)
+   - Express it creatively in your own words
+   - Adapt to the slide's specific context and `copy_direction`
+
+### How to Interpret copy_direction
+
+The `copy_direction` from the Narrative Architect provides narrative guidance, not a script. It tells you:
+- **WHAT** to communicate (the message, key points, emotions)
+- **WHY** it matters (the narrative purpose)
+- **HOW** to approach it (the tone, style, emphasis)
+
+Use this as inspiration to craft original copy, not as literal instructions to follow word-for-word. Your job is to translate this narrative intent into compelling, creative text that fits the template's structural pattern while expressing the concept uniquely.
+
+### Template Selection Context
+
+Templates were selected based on semantic analysis of the slide's purpose, copy_direction, and key_elements. This means the template matches the slide's intent - trust this match, but remember you have creative freedom in how you express that intent within the template's conceptual pattern.
 
 ---
 
@@ -187,9 +246,18 @@ For each slide and its required text elements:
 - Maintain consistent voice and tone throughout
 - Create a cohesive story arc from first to last slide
 
-**For Each Slide:**
-- Use the slide's `template_id` structure as a base (when provided in templates_reference)
-- Follow that slide's `copy_direction` guidance
+**For Each Slide - Balancing Template Structure with Creativity:**
+- **Interpret Structure Conceptually**: The template's `structure` field (e.g., "What if [ideal scenario]?") represents a conceptual pattern, not literal text. Understand what the pattern achieves, then express it creatively in your own words.
+- **Use Usage Examples as Inspiration**: Review the template's `usage_examples` to see varied approaches. These demonstrate the template's flexibility - use them as inspiration to create your own unique variation that fits the slide's context.
+- **Follow Creative Guidance**: The template's `creative_guidance` explains how to use the template creatively. This is your primary guide for understanding the template's intent and adapting it to your context.
+- **Respect What to Avoid**: Heed the template's `what_to_avoid` warnings. These highlight common mistakes that lead to literal, formulaic copy. Avoid these patterns to maintain creativity.
+- **Understand the Narrative Purpose**: Review the template's `detailed_description` to understand what it fundamentally achieves and when to use it. This helps you capture the template's essence while expressing it uniquely.
+- **Adapt to Context**: Use the slide's `copy_direction`, `key_elements`, and `purpose` to inform how you creatively express the template's pattern. The template provides the structural inspiration; the slide context provides the specific message.
+- **Don't Copy Literally**: Never use the template's `structure` or `example` as literal text. Instead, capture the template's conceptual essence and express it in original, contextually relevant copy.
+
+**Additional Guidelines:**
+- Use the slide's `template_id` to reference the template's creative guidance (when provided in templates_reference)
+- Follow that slide's `copy_direction` as narrative inspiration, not literal instructions
 - Respect voice attributes (tone, vocabulary_level, formality)
 - Use slide-referenced insights and `key_elements`
 - Incorporate post-level context (value_proposition, idea_explanation, rationale, pain_points, desires)
