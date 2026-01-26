@@ -4,7 +4,7 @@ Unit tests for Narrative Architect.
 Tests the Narrative Architect agent that generates detailed slide-by-slide
 narrative structures from coherence briefs.
 
-Location: tests/test_narrative_architect.py
+Location: tests/agents/test_narrative_architect.py
 """
 
 import json
