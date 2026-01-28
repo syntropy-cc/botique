@@ -395,7 +395,7 @@ class Copywriter:
             if template_id and template_id != "N/A":
                 template = template_library.get_template(template_id)
                 if template:
-                    template_details = self._build_template_context_block(template)
+                    template_details = _build_template_context_block(template)
             
             # Content slots
             content_slots = slide.get("content_slots", {})

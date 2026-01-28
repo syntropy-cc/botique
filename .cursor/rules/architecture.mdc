@@ -1,0 +1,173 @@
+---
+description: Core architecture rules and principles for the project
+globs: ["**/*"]
+alwaysApply: true
+priority: 1
+---
+
+# Architecture Rules
+
+## Purpose
+
+This file defines the architectural invariants and principles that govern all implementation decisions. Every code change must comply with these rules. When in doubt, consult the referenced ADR for full context.
+
+## Architectural Style
+
+The system follows a **{ARCHITECTURE_STYLE}** architecture. All components must respect the boundaries and communication patterns defined below.
+
+> **Note to AI**: Before implementing any feature, verify it aligns with the current architectural style documented in `docs/architecture/ARCHITECTURE.md`.
+
+## Layer Boundaries
+
+### Rule ARCH-001: Strict Layer Separation
+
+When implementing any component, respect the following layer hierarchy. Dependencies flow downward only. Never import from a higher layer.
+
+```
+┌─────────────────────────────────────┐
+│         Presentation Layer          │  → UI, Controllers, API Endpoints
+├─────────────────────────────────────┤
+│         Application Layer           │  → Use Cases, Services, Orchestration
+├─────────────────────────────────────┤
+│           Domain Layer              │  → Entities, Value Objects, Domain Services
+├─────────────────────────────────────┤
+│        Infrastructure Layer         │  → Repositories, External Services, DB
+└─────────────────────────────────────┘
+```
+
+**Enforcement**: If you need functionality from a higher layer, this indicates a design flaw. Stop and reconsider the approach.
+
+### Rule ARCH-002: Dependency Inversion
+
+Domain and Application layers must not depend on Infrastructure implementations. Always depend on abstractions (interfaces/protocols) defined in the domain layer.
+
+```
+# CORRECT
+from domain.repositories import UserRepository  # Interface
+
+# INCORRECT
+from infrastructure.postgres import PostgresUserRepository  # Implementation
+```
+
+## Component Communication
+
+### Rule ARCH-003: Inter-Component Communication
+
+Components communicate through well-defined contracts. Direct function calls across bounded contexts are prohibited.
+
+**Allowed communication patterns**:
+- Events (async, preferred for cross-context)
+- Commands (sync, within same context)
+- Queries (sync, read-only operations)
+
+**Prohibited**:
+- Direct database access across contexts
+- Shared mutable state between components
+- Circular dependencies between modules
+
+### Rule ARCH-004: API Contracts
+
+All public interfaces must be explicitly defined and versioned. Internal implementation details must never leak through public APIs.
+
+```
+# CORRECT: Explicit contract
+class CreateUserRequest(BaseModel):
+    email: EmailStr
+    name: str
+
+# INCORRECT: Leaking internal structure
+def create_user(db_session, raw_dict):  # Exposes implementation details
+    ...
+```
+
+## Data Management
+
+### Rule ARCH-005: Single Source of Truth
+
+Each piece of data has exactly one authoritative source. Other components must reference, not duplicate.
+
+**Before creating any new data store or cache**, verify:
+1. Does this data already exist elsewhere?
+2. If yes, can we reference it instead of duplicating?
+3. If duplication is necessary, document the sync strategy in an ADR.
+
+### Rule ARCH-006: Data Validation at Boundaries
+
+Validate all external input at system boundaries. Internal components may assume data validity.
+
+```
+# Boundary (API endpoint) - Full validation
+@router.post("/users")
+def create_user(request: CreateUserRequest):  # Pydantic validates here
+    ...
+
+# Internal (domain service) - Trust validated data
+def process_user(user: User):  # No re-validation needed
+    ...
+```
+
+## Error Handling
+
+### Rule ARCH-007: Error Propagation Strategy
+
+Errors are categorized into three types with distinct handling:
+
+| Error Type | Handling | Example |
+|------------|----------|---------|
+| Domain Errors | Return as result, let caller decide | `UserNotFound`, `InvalidEmail` |
+| Infrastructure Errors | Wrap in domain errors, log original | DB timeout → `ServiceUnavailable` |
+| Programming Errors | Fail fast, do not catch | `NullPointerException`, `TypeError` |
+
+**Never** silently swallow exceptions. Either handle meaningfully or propagate.
+
+## Configuration
+
+### Rule ARCH-008: Configuration Hierarchy
+
+Configuration follows this precedence (highest to lowest):
+1. Environment variables
+2. Environment-specific config files
+3. Default config files
+4. Hardcoded defaults (last resort)
+
+**Secrets must never**:
+- Appear in code or config files
+- Be logged at any level
+- Be passed through URLs
+
+## Cross-Cutting Concerns
+
+### Rule ARCH-009: Observability Requirements
+
+Every component must support:
+- **Logging**: Structured logs with correlation IDs
+- **Metrics**: Key business and technical metrics exposed
+- **Tracing**: Distributed tracing headers propagated
+
+### Rule ARCH-010: Security by Default
+
+Apply defense in depth:
+- Authenticate at the edge
+- Authorize at the resource
+- Encrypt in transit and at rest
+- Sanitize all outputs (prevent injection)
+
+## Decision References
+
+| Rule | Related ADR | Status |
+|------|-------------|--------|
+| ARCH-001 | ADR-001 | Active |
+| ARCH-002 | ADR-001 | Active |
+| ARCH-003 | ADR-002 | Active |
+
+> **Maintenance Note**: Update this table when creating new ADRs that affect architecture rules.
+
+## Conflict Resolution
+
+When rules conflict, apply this precedence:
+1. Security rules (ARCH-010)
+2. Data integrity rules (ARCH-005, ARCH-006)
+3. Layer boundary rules (ARCH-001, ARCH-002)
+4. Communication rules (ARCH-003, ARCH-004)
+
+When uncertain, create a proposal document before proceeding.

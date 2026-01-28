@@ -1,0 +1,406 @@
+---
+description: Naming conventions, code style, and formatting standards
+globs: ["**/*.py", "**/*.ts", "**/*.js", "**/*.go", "**/*.java"]
+alwaysApply: true
+priority: 3
+---
+
+# Conventions Rules
+
+## Purpose
+
+This file establishes consistent naming, formatting, and structural conventions across the codebase. Consistency reduces cognitive load and enables automation. Follow these conventions unless a language-specific idiom dictates otherwise.
+
+## Naming Conventions
+
+### Rule CONV-001: General Naming Principles
+
+Names must be:
+- **Descriptive**: Reveal intent, not implementation
+- **Pronounceable**: Can be spoken in discussion
+- **Searchable**: Unique enough to find via search
+- **Consistent**: Same concept uses same name everywhere
+
+```python
+# CORRECT: Descriptive and clear
+def calculate_monthly_revenue(transactions: list[Transaction]) -> Money:
+    ...
+
+# INCORRECT: Cryptic abbreviations
+def calc_rev(txns):
+    ...
+
+# INCORRECT: Implementation detail in name
+def loop_through_array_and_sum(arr):
+    ...
+```
+
+### Rule CONV-002: Case Conventions by Element Type
+
+| Element | Convention | Example |
+|---------|------------|---------|
+| Classes | PascalCase | `UserAccount`, `PaymentProcessor` |
+| Functions/Methods | snake_case (Python) / camelCase (JS/TS) | `calculate_tax` / `calculateTax` |
+| Variables | snake_case (Python) / camelCase (JS/TS) | `user_count` / `userCount` |
+| Constants | SCREAMING_SNAKE_CASE | `MAX_RETRY_COUNT`, `DEFAULT_TIMEOUT` |
+| Files (modules) | snake_case | `user_repository.py`, `payment_service.ts` |
+| Directories | kebab-case | `user-management/`, `payment-processing/` |
+| Database Tables | snake_case, plural | `user_accounts`, `payment_transactions` |
+| Database Columns | snake_case | `created_at`, `user_id` |
+| API Endpoints | kebab-case | `/api/v1/user-accounts` |
+| Environment Variables | SCREAMING_SNAKE_CASE | `DATABASE_URL`, `API_KEY` |
+
+### Rule CONV-003: Domain-Specific Naming
+
+Use ubiquitous language from the domain. Maintain a glossary in `docs/GLOSSARY.md` and reference it for all naming.
+
+```python
+# CORRECT: Uses domain language
+class LoanApplication:
+    def submit_for_underwriting(self) -> UnderwritingResult:
+        ...
+
+# INCORRECT: Generic technical terms
+class Request:
+    def process(self) -> Result:
+        ...
+```
+
+### Rule CONV-004: Naming by Scope
+
+| Scope | Guideline | Example |
+|-------|-----------|---------|
+| Local (< 5 lines) | Short, contextual | `i`, `x`, `item` |
+| Function scope | Medium, descriptive | `user_count`, `filtered_items` |
+| Module scope | Full description | `active_user_count`, `pending_transactions` |
+| Public API | Complete, unambiguous | `calculate_monthly_recurring_revenue` |
+
+### Rule CONV-005: Boolean Naming
+
+Booleans must read as yes/no questions:
+- Prefix with `is_`, `has_`, `can_`, `should_`, `will_`
+- Avoid negations in names
+
+```python
+# CORRECT
+is_active = True
+has_permission = user.can_access(resource)
+should_retry = attempt_count < max_retries
+
+# INCORRECT
+active = True  # Unclear if boolean
+not_found = True  # Negation in name, causes double negatives
+```
+
+### Rule CONV-006: Collection Naming
+
+Collections use plural nouns. Single items use singular.
+
+```python
+# CORRECT
+users = get_all_users()
+for user in users:
+    process_user(user)
+
+# INCORRECT
+user_list = get_all_users()  # Redundant "list"
+for u in user_list:  # Single-letter not descriptive
+    ...
+```
+
+## File Organization
+
+### Rule CONV-007: File Structure
+
+Each file follows this order:
+
+```python
+# 1. Module docstring
+"""Module description."""
+
+# 2. Imports (grouped and sorted)
+# Standard library
+import os
+from datetime import datetime
+
+# Third-party
+import pydantic
+from fastapi import FastAPI
+
+# Local
+from .models import User
+from .services import UserService
+
+# 3. Constants
+DEFAULT_PAGE_SIZE = 20
+
+# 4. Type definitions / Protocols
+class UserRepository(Protocol):
+    ...
+
+# 5. Classes
+class UserService:
+    ...
+
+# 6. Functions
+def create_user(...):
+    ...
+
+# 7. Module-level code (if any, minimize)
+if __name__ == "__main__":
+    ...
+```
+
+### Rule CONV-008: Import Organization
+
+Group imports in this order, separated by blank lines:
+1. Standard library
+2. Third-party packages
+3. Local imports (absolute)
+4. Local imports (relative)
+
+Within each group, sort alphabetically. Prefer explicit imports over wildcards.
+
+```python
+# CORRECT
+from datetime import datetime, timedelta
+from typing import Optional
+
+import httpx
+from pydantic import BaseModel
+
+from app.core.config import settings
+from app.domain.user import User
+
+from .repository import UserRepository
+
+# INCORRECT
+from app.domain.user import *  # Wildcard import
+import os, sys  # Multiple imports on one line
+```
+
+### Rule CONV-009: Module Size Limits
+
+| Metric | Soft Limit | Hard Limit | Action if Exceeded |
+|--------|------------|------------|-------------------|
+| Lines per file | 300 | 500 | Split module |
+| Classes per file | 3 | 5 | Extract to separate files |
+| Functions per file | 10 | 15 | Group into submodules |
+| Import statements | 15 | 25 | Consider restructuring |
+
+## Code Formatting
+
+### Rule CONV-010: Formatting Tools
+
+Formatting is automated. Do not manually format code.
+
+| Language | Formatter | Config File |
+|----------|-----------|-------------|
+| Python | Black + isort | `pyproject.toml` |
+| TypeScript/JavaScript | Prettier | `.prettierrc` |
+| Go | gofmt | (built-in) |
+| SQL | sqlfluff | `.sqlfluff` |
+
+**Pre-commit hooks enforce formatting**. If code fails formatting checks, run the formatter before committing.
+
+### Rule CONV-011: Line Length and Wrapping
+
+Maximum line length: 88 characters (Black default) or 100 characters (configurable).
+
+When wrapping:
+```python
+# CORRECT: Break after opening bracket
+result = some_function_with_long_name(
+    first_argument,
+    second_argument,
+    third_argument,
+)
+
+# CORRECT: Break before operator for long expressions
+total = (
+    first_value
+    + second_value
+    + third_value
+)
+
+# INCORRECT: Awkward mid-expression break
+result = some_function(first_argument, second_argument,
+    third_argument)  # Unclear alignment
+```
+
+## Documentation Conventions
+
+### Rule CONV-012: Docstring Requirements
+
+**Required documentation**:
+- All public modules, classes, and functions
+- Complex private functions (> 10 lines)
+- Any non-obvious algorithm or business logic
+
+**Format**: Use Google-style docstrings
+
+```python
+def calculate_compound_interest(
+    principal: Decimal,
+    rate: Decimal,
+    periods: int,
+    compounds_per_period: int = 12
+) -> Decimal:
+    """Calculate compound interest over time.
+    
+    Uses the standard compound interest formula:
+    A = P(1 + r/n)^(nt)
+    
+    Args:
+        principal: Initial investment amount.
+        rate: Annual interest rate as decimal (e.g., 0.05 for 5%).
+        periods: Number of years.
+        compounds_per_period: Compounding frequency per year.
+    
+    Returns:
+        Final amount including principal and interest.
+    
+    Raises:
+        ValueError: If rate is negative or periods is non-positive.
+    
+    Example:
+        >>> calculate_compound_interest(Decimal("1000"), Decimal("0.05"), 10)
+        Decimal("1647.01")
+    """
+```
+
+### Rule CONV-013: Comment Guidelines
+
+Comments explain **why**, not **what**. Code should be self-documenting for the **what**.
+
+```python
+# CORRECT: Explains why
+# Using insertion sort here because the list is nearly sorted
+# and small (< 10 items), making it faster than quicksort
+sorted_items = insertion_sort(items)
+
+# INCORRECT: Explains what (obvious from code)
+# Sort the items
+sorted_items = sorted(items)
+
+# CORRECT: Documents non-obvious business rule
+# Discount only applies to orders placed before 2pm EST
+# per marketing campaign rules (JIRA-1234)
+if order.placed_at.hour < 14:
+    apply_discount(order)
+```
+
+### Rule CONV-014: TODO/FIXME Format
+
+Temporary markers must include:
+- Category: `TODO`, `FIXME`, `HACK`, `XXX`
+- Author or ticket reference
+- Brief description
+
+```python
+# TODO(jsmith): Implement caching for performance - JIRA-456
+# FIXME: Race condition when concurrent updates - JIRA-789
+# HACK: Workaround for library bug, remove when upgraded to v2.0
+```
+
+> **AI Instruction**: Do not add TODO comments unless explicitly instructed. Implement complete solutions.
+
+## Error Messages
+
+### Rule CONV-015: Error Message Format
+
+Error messages must be:
+- Actionable: Tell user what to do
+- Specific: Include relevant values
+- Contextual: Indicate where error occurred
+
+```python
+# CORRECT
+raise ValueError(
+    f"Invalid email format: '{email}'. "
+    f"Email must contain '@' and valid domain."
+)
+
+# INCORRECT
+raise ValueError("Invalid email")  # Not actionable
+raise ValueError("Error occurred")  # Not specific
+```
+
+## API Conventions
+
+### Rule CONV-016: REST Endpoint Naming
+
+```
+GET    /api/v1/users          # List users
+POST   /api/v1/users          # Create user
+GET    /api/v1/users/{id}     # Get single user
+PUT    /api/v1/users/{id}     # Replace user
+PATCH  /api/v1/users/{id}     # Partial update
+DELETE /api/v1/users/{id}     # Delete user
+
+GET    /api/v1/users/{id}/orders  # Nested resource
+POST   /api/v1/users/{id}/orders  # Create nested
+
+POST   /api/v1/orders/{id}/cancel  # Action (verb as noun)
+```
+
+### Rule CONV-017: Response Envelope
+
+All API responses follow consistent structure:
+
+```json
+{
+  "data": { ... },
+  "meta": {
+    "timestamp": "2024-01-15T10:30:00Z",
+    "request_id": "abc-123"
+  }
+}
+
+// Error response
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid input provided",
+    "details": [
+      {"field": "email", "message": "Invalid format"}
+    ]
+  },
+  "meta": { ... }
+}
+```
+
+## Git Conventions
+
+### Rule CONV-018: Commit Message Format
+
+Follow Conventional Commits specification:
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+```
+feat(auth): add OAuth2 login support
+
+Implement Google and GitHub OAuth2 providers with
+automatic account linking for existing users.
+
+Closes #123
+```
+
+### Rule CONV-019: Branch Naming
+
+```
+<type>/<ticket>-<description>
+
+feat/JIRA-123-oauth-login
+fix/JIRA-456-memory-leak
+docs/JIRA-789-api-reference
+```

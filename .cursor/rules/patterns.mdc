@@ -1,0 +1,298 @@
+---
+description: Design patterns and code structure standards
+globs: ["**/*.py", "**/*.ts", "**/*.js", "**/*.go"]
+alwaysApply: true
+priority: 2
+---
+
+# Design Patterns Rules
+
+## Purpose
+
+This file defines the approved design patterns and their correct implementation. When implementing features, prefer these patterns over ad-hoc solutions. Consistency enables maintainability.
+
+## Creational Patterns
+
+### Rule PAT-001: Factory Pattern for Complex Object Creation
+
+Use factories when object creation involves:
+- Multiple steps or dependencies
+- Conditional logic based on input
+- Need for testability (mock injection)
+
+```python
+# CORRECT: Factory encapsulates creation logic
+class UserFactory:
+    def __init__(self, hasher: PasswordHasher, validator: EmailValidator):
+        self._hasher = hasher
+        self._validator = validator
+    
+    def create(self, email: str, password: str) -> User:
+        validated_email = self._validator.validate(email)
+        hashed_password = self._hasher.hash(password)
+        return User(email=validated_email, password_hash=hashed_password)
+
+# INCORRECT: Creation logic scattered in calling code
+user = User(
+    email=validate_email(email),
+    password_hash=hash_password(password)
+)
+```
+
+### Rule PAT-002: Builder for Objects with Many Optional Parameters
+
+When a class has more than 4 optional parameters, use the Builder pattern.
+
+```python
+# CORRECT: Builder for complex configuration
+report = (
+    ReportBuilder()
+    .with_title("Monthly Sales")
+    .with_date_range(start, end)
+    .with_format(Format.PDF)
+    .include_charts()
+    .build()
+)
+
+# INCORRECT: Constructor with many optional params
+report = Report(
+    title="Monthly Sales",
+    start_date=start,
+    end_date=end,
+    format=Format.PDF,
+    include_charts=True,
+    include_tables=None,  # Unclear what None means
+    ...
+)
+```
+
+### Rule PAT-003: Singleton Restriction
+
+Singletons are **prohibited** except for:
+- Configuration objects (read-only after initialization)
+- Connection pools (managed lifecycle)
+- Logging infrastructure
+
+For these exceptions, use dependency injection to provide the instance rather than global access.
+
+## Structural Patterns
+
+### Rule PAT-004: Repository Pattern for Data Access
+
+All data access goes through repositories. Repositories:
+- Define interface in domain layer
+- Implement in infrastructure layer
+- Return domain objects, not database models
+
+```python
+# Domain layer - interface
+class UserRepository(Protocol):
+    def find_by_id(self, user_id: UserId) -> Optional[User]: ...
+    def save(self, user: User) -> None: ...
+
+# Infrastructure layer - implementation
+class PostgresUserRepository(UserRepository):
+    def find_by_id(self, user_id: UserId) -> Optional[User]:
+        row = self._session.query(UserModel).get(user_id.value)
+        return self._to_domain(row) if row else None
+```
+
+### Rule PAT-005: Adapter for External Services
+
+Wrap all external services in adapters. This isolates external API changes and enables testing.
+
+```python
+# CORRECT: Adapter wraps external service
+class StripePaymentAdapter(PaymentGateway):
+    def __init__(self, stripe_client: stripe.Client):
+        self._client = stripe_client
+    
+    def charge(self, amount: Money, card: CardToken) -> PaymentResult:
+        try:
+            result = self._client.charges.create(...)
+            return PaymentResult.success(result.id)
+        except stripe.CardError as e:
+            return PaymentResult.failure(str(e))
+
+# INCORRECT: Direct stripe calls in business logic
+def process_order(order: Order):
+    stripe.Charge.create(...)  # Tight coupling to Stripe
+```
+
+### Rule PAT-006: Facade for Complex Subsystems
+
+When a subsystem requires multiple steps or components, expose a simplified interface through a Facade.
+
+```python
+# Facade simplifies complex workflow
+class OrderFacade:
+    def __init__(
+        self,
+        inventory: InventoryService,
+        payment: PaymentService,
+        shipping: ShippingService,
+        notification: NotificationService
+    ):
+        self._inventory = inventory
+        self._payment = payment
+        self._shipping = shipping
+        self._notification = notification
+    
+    def place_order(self, order: Order) -> OrderResult:
+        """Single entry point for order placement."""
+        self._inventory.reserve(order.items)
+        payment = self._payment.charge(order.total)
+        shipment = self._shipping.schedule(order)
+        self._notification.send_confirmation(order)
+        return OrderResult(payment, shipment)
+```
+
+## Behavioral Patterns
+
+### Rule PAT-007: Strategy for Interchangeable Algorithms
+
+When behavior varies based on type or configuration, use Strategy pattern instead of conditionals.
+
+```python
+# CORRECT: Strategy pattern
+class PricingStrategy(Protocol):
+    def calculate(self, base_price: Decimal) -> Decimal: ...
+
+class RegularPricing(PricingStrategy):
+    def calculate(self, base_price: Decimal) -> Decimal:
+        return base_price
+
+class PremiumPricing(PricingStrategy):
+    def calculate(self, base_price: Decimal) -> Decimal:
+        return base_price * Decimal("0.9")  # 10% discount
+
+def get_price(product: Product, strategy: PricingStrategy) -> Decimal:
+    return strategy.calculate(product.base_price)
+
+# INCORRECT: Conditional logic
+def get_price(product: Product, customer_type: str) -> Decimal:
+    if customer_type == "premium":
+        return product.base_price * Decimal("0.9")
+    elif customer_type == "regular":
+        return product.base_price
+    # This grows unbounded with new types
+```
+
+### Rule PAT-008: Command for Operations with Undo/Audit
+
+Use Command pattern when operations need:
+- Undo capability
+- Audit logging
+- Queuing/scheduling
+- Transaction boundaries
+
+```python
+class Command(Protocol):
+    def execute(self) -> Result: ...
+    def undo(self) -> None: ...
+
+class TransferFundsCommand:
+    def __init__(self, from_account: Account, to_account: Account, amount: Money):
+        self.from_account = from_account
+        self.to_account = to_account
+        self.amount = amount
+        self._executed = False
+    
+    def execute(self) -> Result:
+        self.from_account.debit(self.amount)
+        self.to_account.credit(self.amount)
+        self._executed = True
+        return Result.success()
+    
+    def undo(self) -> None:
+        if self._executed:
+            self.to_account.debit(self.amount)
+            self.from_account.credit(self.amount)
+```
+
+### Rule PAT-009: Observer/Event for Loose Coupling
+
+Use events to decouple components that react to state changes.
+
+```python
+# Event definition
+@dataclass(frozen=True)
+class OrderPlaced:
+    order_id: OrderId
+    customer_id: CustomerId
+    total: Money
+    timestamp: datetime
+
+# Publisher
+class OrderService:
+    def __init__(self, event_bus: EventBus):
+        self._event_bus = event_bus
+    
+    def place_order(self, order: Order) -> None:
+        # ... order logic ...
+        self._event_bus.publish(OrderPlaced(
+            order_id=order.id,
+            customer_id=order.customer_id,
+            total=order.total,
+            timestamp=datetime.utcnow()
+        ))
+
+# Subscribers (decoupled)
+class InventorySubscriber:
+    @subscribe(OrderPlaced)
+    def on_order_placed(self, event: OrderPlaced) -> None:
+        self._inventory.reserve(event.order_id)
+
+class NotificationSubscriber:
+    @subscribe(OrderPlaced)
+    def on_order_placed(self, event: OrderPlaced) -> None:
+        self._mailer.send_confirmation(event.customer_id)
+```
+
+## Anti-Patterns to Avoid
+
+### Rule PAT-010: Prohibited Patterns
+
+The following are **prohibited** in this codebase:
+
+| Anti-Pattern | Problem | Alternative |
+|--------------|---------|-------------|
+| God Object | Single class doing everything | Split by responsibility |
+| Anemic Domain Model | Entities without behavior | Rich domain models |
+| Service Locator | Hidden dependencies | Explicit dependency injection |
+| Magic Numbers/Strings | Unclear meaning | Named constants or enums |
+| Deep Nesting | Hard to follow | Early returns, extraction |
+
+**Maximum allowed**:
+- Method length: 30 lines (prefer < 15)
+- Class responsibilities: Single (SRP)
+- Nesting depth: 3 levels
+- Parameters per function: 5 (use objects for more)
+
+## Pattern Selection Guide
+
+When implementing a feature, use this decision tree:
+
+```
+Need to create complex objects?
+├── Yes, with many optional params → Builder (PAT-002)
+├── Yes, with dependencies → Factory (PAT-001)
+└── No → Direct construction
+
+Need to access external resource?
+├── Database → Repository (PAT-004)
+├── External API → Adapter (PAT-005)
+└── Complex subsystem → Facade (PAT-006)
+
+Need varying behavior?
+├── Based on type/config → Strategy (PAT-007)
+├── Need undo/audit → Command (PAT-008)
+└── React to changes → Observer (PAT-009)
+```
+
+## References
+
+| Rule | Related ADR |
+|------|-------------|
+| PAT-004 | ADR-003 |
+| PAT-009 | ADR-004 |

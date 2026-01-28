@@ -1,0 +1,202 @@
+---
+description: Technical and business constraints that limit implementation choices
+globs: ["**/*"]
+alwaysApply: true
+priority: 1
+---
+
+# Constraints Rules
+
+## Purpose
+
+This file documents the hard constraints that bound all architectural and implementation decisions. Constraints are non-negotiable unless explicitly changed through the architecture evolution process (see `architecture-evolution.mdc`).
+
+## Technical Constraints
+
+### Rule CON-001: Technology Stack
+
+The following technologies are mandated for this project. Do not introduce alternatives without an approved RFC.
+
+**Core Stack**:
+| Layer | Technology | Version | Rationale |
+|-------|------------|---------|-----------|
+| Language | {LANGUAGE} | {VERSION} | Team expertise, ecosystem |
+| Framework | {FRAMEWORK} | {VERSION} | ADR-001 |
+| Database | {DATABASE} | {VERSION} | ADR-002 |
+| Cache | {CACHE} | {VERSION} | Performance requirements |
+| Message Queue | {QUEUE} | {VERSION} | Async processing needs |
+
+**Approved Libraries**:
+> Only use libraries from this approved list for core functionality. For utilities not listed, consult before adding.
+
+```yaml
+# Example structure - customize per project
+http_client: httpx  # Not requests
+validation: pydantic
+testing: pytest
+mocking: pytest-mock
+```
+
+### Rule CON-002: Runtime Constraints
+
+**Memory Limits**:
+- Maximum heap per service: {MAX_MEMORY}
+- Maximum container memory: {CONTAINER_MEMORY}
+
+**Timeout Limits**:
+- HTTP request timeout: 30 seconds (hard limit)
+- Database query timeout: 10 seconds
+- Background job timeout: 5 minutes
+
+**Connection Limits**:
+- Database pool size: 20 connections per instance
+- External API concurrent calls: 10 per service
+
+> **AI Instruction**: When implementing features, verify resource usage stays within these bounds. Flag potential violations in code reviews.
+
+### Rule CON-003: Compatibility Requirements
+
+**Backward Compatibility**:
+- APIs must maintain backward compatibility for 2 major versions
+- Database migrations must be reversible for 30 days
+- Configuration changes must support previous format during transition
+
+**Forward Compatibility**:
+- Ignore unknown fields in API requests (don't fail)
+- Use semantic versioning for all public interfaces
+- Document breaking changes in CHANGELOG
+
+### Rule CON-004: Performance Baselines
+
+These are the minimum performance requirements. Implementations falling below these thresholds require optimization before merge.
+
+| Metric | Target | Maximum | Measurement |
+|--------|--------|---------|-------------|
+| API Response (p95) | < 200ms | 500ms | End-to-end latency |
+| API Response (p99) | < 500ms | 1000ms | End-to-end latency |
+| Database Query | < 50ms | 100ms | Query execution time |
+| Page Load (LCP) | < 2.5s | 4s | Largest Contentful Paint |
+| Startup Time | < 30s | 60s | Service ready to serve |
+
+## Business Constraints
+
+### Rule CON-005: Compliance Requirements
+
+The system must comply with the following regulations. These constrain data handling, storage, and processing decisions.
+
+**Applicable Regulations**:
+- {REGULATION_1}: {BRIEF_DESCRIPTION}
+- {REGULATION_2}: {BRIEF_DESCRIPTION}
+
+**Derived Constraints**:
+- Personal data must be encrypted at rest (AES-256)
+- Personal data must be encrypted in transit (TLS 1.3)
+- Data retention: maximum {RETENTION_PERIOD} unless legally required longer
+- Right to deletion: must support within 30 days
+- Audit logs: immutable, retained for {AUDIT_RETENTION}
+
+> **AI Instruction**: When handling personal data, always apply privacy-by-design principles. When uncertain if data is personal, treat it as personal.
+
+### Rule CON-006: Availability Requirements
+
+**Service Level Objectives**:
+- Availability: {SLA_PERCENTAGE}% uptime
+- Recovery Time Objective (RTO): {RTO_HOURS} hours
+- Recovery Point Objective (RPO): {RPO_MINUTES} minutes
+
+**Derived Constraints**:
+- No single points of failure in critical path
+- All stateful components must have replication
+- Automated failover required for databases
+- Health checks must detect failures within 30 seconds
+
+### Rule CON-007: Security Classification
+
+Data is classified into tiers with corresponding handling requirements:
+
+| Classification | Examples | Storage | Transit | Access | Logging |
+|----------------|----------|---------|---------|--------|---------|
+| Public | Marketing content | Standard | HTTPS | Open | Minimal |
+| Internal | Business metrics | Encrypted | HTTPS | Authenticated | Standard |
+| Confidential | Customer PII | Encrypted | mTLS | Role-based | Full audit |
+| Restricted | Credentials, keys | Vault only | mTLS | Need-to-know | Full audit |
+
+> **AI Instruction**: Before implementing any data storage or transmission, identify the data classification and apply corresponding controls.
+
+## Infrastructure Constraints
+
+### Rule CON-008: Deployment Environment
+
+**Target Environment**: {CLOUD_PROVIDER} / {REGION}
+
+**Constraints**:
+- All infrastructure defined as code (Terraform/Pulumi)
+- No manual changes to production environment
+- All deployments through CI/CD pipeline
+- Container-based deployment only (no VM provisioning)
+
+**Resource Quotas**:
+- Maximum instances per service: {MAX_INSTANCES}
+- Maximum storage per database: {MAX_STORAGE}
+- Network egress budget: {EGRESS_BUDGET}/month
+
+### Rule CON-009: Integration Constraints
+
+**Internal Services**:
+- Service mesh required for inter-service communication
+- gRPC for synchronous internal calls
+- Event bus for asynchronous communication
+
+**External Integrations**:
+- All external calls through API gateway
+- Circuit breaker required for all external dependencies
+- Retry with exponential backoff (max 3 retries)
+- Timeout must be configurable per integration
+
+### Rule CON-010: Development Constraints
+
+**Code Quality Gates** (must pass before merge):
+- Unit test coverage: minimum 80%
+- No critical security vulnerabilities (SAST)
+- No high-severity dependency vulnerabilities
+- Linting passes with zero warnings
+- Type checking passes (for typed languages)
+
+**Documentation Requirements**:
+- Public APIs must have OpenAPI/AsyncAPI spec
+- ADR required for architectural decisions
+- README required for each service/package
+
+## Constraint Change Process
+
+Constraints can only be changed through:
+
+1. **Emergency Exception**: Temporary bypass (max 30 days) with CTO approval, documented in `docs/architecture/exceptions/`
+
+2. **Permanent Change**: Full RFC process as defined in `architecture-evolution.mdc`
+
+When requesting constraint changes, document:
+- Which constraint needs modification
+- Business justification
+- Risk assessment
+- Proposed new constraint value
+- Migration plan if applicable
+
+## Constraint Verification
+
+> **AI Instruction**: Before completing any implementation task, verify against this checklist:
+
+```markdown
+## Constraint Compliance Checklist
+
+- [ ] Technology choices within approved stack (CON-001)
+- [ ] Resource usage within limits (CON-002)
+- [ ] Backward compatibility maintained (CON-003)
+- [ ] Performance targets achievable (CON-004)
+- [ ] Compliance requirements addressed (CON-005)
+- [ ] Availability patterns implemented (CON-006)
+- [ ] Data classification identified and controls applied (CON-007)
+- [ ] Infrastructure as code (CON-008)
+- [ ] Integration patterns followed (CON-009)
+- [ ] Quality gates will pass (CON-010)
+```

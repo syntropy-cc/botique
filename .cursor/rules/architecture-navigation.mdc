@@ -1,0 +1,250 @@
+---
+description: Rules for navigating and maintaining complex multi-document architecture
+globs: ["**/*"]
+alwaysApply: true
+priority: 0
+---
+
+# Complex Architecture Navigation Rules
+
+## Purpose
+
+This file provides rules for working with architecture documentation that spans multiple documents. For systems with multiple domains, services, or bounded contexts, architecture cannot fit in a single document. This file tells you how to navigate, update, and maintain consistency across distributed documentation.
+
+> **AI Instruction**: Before implementing any significant feature, determine which architecture documents are relevant and load them. Never assume you have complete context from a single document.
+
+## Document Hierarchy
+
+Architecture documentation follows a strict hierarchy. Each level provides progressively more detail.
+
+```
+Level 1: System Context (ARCHITECTURE.md at root)
+    │
+    ├── Level 2: Domain/Container Architecture (domains/*/ARCHITECTURE.md)
+    │       │
+    │       └── Level 3: Component Details (inline or separate docs)
+    │
+    ├── Level 2: Platform Architecture (platform/*/ARCHITECTURE.md)
+    │
+    └── Level 2: Cross-Cutting Concerns (cross-cutting/*/ARCHITECTURE.md)
+```
+
+### Rule NAV-001: Start at Root
+
+Always begin by reading the root `ARCHITECTURE.md`. It provides:
+- System-wide context and principles
+- Document map showing where to find details
+- Domain boundaries and ownership
+- Navigation guide for specific scenarios
+
+**Do NOT** dive directly into domain documents without first understanding the system context.
+
+### Rule NAV-002: Load Relevant Domains
+
+After reading the root document, load architecture documents for domains you will modify.
+
+| If working on... | Load these documents |
+|------------------|---------------------|
+| Feature in single domain | Root + that domain's ARCHITECTURE.md |
+| Feature spanning domains | Root + all affected domains |
+| Infrastructure changes | Root + platform/infrastructure + affected domains |
+| Security-related changes | Root + cross-cutting/security + affected domains |
+| Data model changes | Root + owning domain + platform/data if analytics affected |
+| API changes | Root + owning domain + platform/integration |
+
+### Rule NAV-003: Respect Document Scope
+
+Each document has a defined scope. Do not expect or add information outside that scope.
+
+**Root document contains**:
+- System boundaries and external interfaces
+- Domain overview and relationships
+- System-wide principles (not implementation details)
+- Technology radar and standards
+- Navigation guidance
+
+**Domain documents contain**:
+- Internal structure of that domain only
+- Data models owned by that domain
+- APIs exposed by that domain
+- Domain-specific decisions
+
+**Platform documents contain**:
+- Shared infrastructure details
+- Platform services used by all domains
+- Operational procedures
+
+**Cross-cutting documents contain**:
+- Policies and patterns applied across all domains
+- Security controls, resilience patterns, etc.
+
+## Consistency Rules
+
+### Rule NAV-004: Single Source of Truth
+
+Each piece of architectural information has exactly one authoritative source. Other documents may reference but not duplicate.
+
+| Information | Authoritative Source |
+|-------------|---------------------|
+| Domain boundaries | Root ARCHITECTURE.md |
+| Domain internals | Domain's ARCHITECTURE.md |
+| Data model for entity X | Domain that owns entity X |
+| API contract | Owning domain's ARCHITECTURE.md or OpenAPI spec |
+| Infrastructure topology | platform/infrastructure/ARCHITECTURE.md |
+| Security policies | cross-cutting/security/ARCHITECTURE.md |
+| System-wide principles | Root ARCHITECTURE.md |
+
+### Rule NAV-005: Cross-References
+
+When one document needs to mention content owned by another:
+1. Provide a brief summary (1-2 sentences max)
+2. Link to the authoritative source
+3. Never duplicate detailed information
+
+```markdown
+<!-- CORRECT: Reference with link -->
+Order processing uses the Payment domain for transactions. 
+See [Payments Architecture](../../domains/payments/ARCHITECTURE.md) for payment flow details.
+
+<!-- INCORRECT: Duplicating payment details -->
+Order processing uses the Payment domain. The payment flow works as follows:
+1. Create payment intent
+2. Process card
+3. ... (this duplicates content from Payments architecture)
+```
+
+### Rule NAV-006: Cascading Updates
+
+When making changes that affect multiple documents, update in this order:
+
+1. **Decision documents first** (ADR/RFC)
+2. **Authoritative source** (the document that owns this information)
+3. **Dependent documents** (documents that reference this information)
+4. **Rule files** (if rules derive from the decision)
+
+Always verify consistency across all affected documents before completing the change.
+
+## Change Management for Complex Systems
+
+### Rule NAV-007: Cross-Domain Change Classification
+
+Changes affecting multiple domains require additional scrutiny.
+
+| Change Scope | Classification | Additional Requirements |
+|--------------|----------------|------------------------|
+| Single domain, internal | L1-L3 per normal rules | None |
+| Single domain, public API | L3 minimum | Notify dependent domains |
+| Multiple domains, coordinated | L4 (RFC required) | All domain owners review |
+| System-wide principle change | L4 (RFC required) | Architecture board review |
+
+### Rule NAV-008: Domain Boundary Violations
+
+**Never** implement features that violate domain boundaries:
+- No direct database access across domains
+- No shared mutable state between domains
+- No circular dependencies between domains
+
+If a feature seems to require boundary violation, STOP and:
+1. Question whether the domain boundaries are correct
+2. Propose boundary adjustment via RFC if needed
+3. Design proper integration (API or events) instead
+
+### Rule NAV-009: Coordinated Changes
+
+For changes affecting multiple domains:
+
+1. Create RFC with all affected domains listed
+2. Each domain owner must review and approve
+3. Define the order of changes (usually: contracts first, implementations second)
+4. Define rollback strategy for partial failures
+5. Update all architecture documents atomically
+
+## AI Navigation Workflow
+
+### Rule NAV-010: Pre-Implementation Checklist
+
+Before implementing any feature, complete this checklist:
+
+```markdown
+## Architecture Navigation Checklist
+
+- [ ] Read root ARCHITECTURE.md
+- [ ] Identified primary domain for this feature: _____________
+- [ ] Loaded primary domain's ARCHITECTURE.md
+- [ ] Identified secondary domains affected: _____________
+- [ ] Loaded secondary domain architecture docs
+- [ ] Checked cross-cutting concerns (security, resilience)
+- [ ] Verified feature respects domain boundaries
+- [ ] Identified existing patterns to follow
+- [ ] Identified constraints that apply
+- [ ] Determined change classification level: _____
+- [ ] Created required documentation (ADR/RFC) if L2+
+```
+
+> **AI Instruction**: For significant features, explicitly work through this checklist and report which documents you loaded and what constraints apply.
+
+### Rule NAV-011: Unknown Territory
+
+When asked to work on an unfamiliar part of the system:
+
+1. Start at root ARCHITECTURE.md
+2. Use the document map to find relevant domain
+3. Read that domain's ARCHITECTURE.md completely
+4. Check for domain-specific ADRs
+5. Only then begin implementation
+
+**Never** guess about architecture when documentation exists. Always load and read it.
+
+### Rule NAV-012: Missing Documentation
+
+If expected documentation doesn't exist:
+
+1. Note the gap explicitly to the user
+2. Propose creating the missing documentation
+3. Do not proceed with assumptions
+
+```
+I notice there's no architecture document for the {X} domain. 
+Before implementing this feature, should I:
+1. Create the domain architecture document first
+2. Proceed with assumptions (list assumptions)
+3. Get clarification from domain owner
+```
+
+## Document Maintenance
+
+### Rule NAV-013: Staleness Detection
+
+Architecture documents should be reviewed when:
+- Significant feature is implemented
+- ADR is accepted that affects the domain
+- Quarterly review cycle (at minimum)
+
+Flag documents that appear stale:
+- Last updated date > 6 months ago
+- References to deprecated technologies
+- Mismatches with actual implementation
+
+### Rule NAV-014: Consistency Verification
+
+After any architecture change, verify:
+
+1. Root document still accurately describes system
+2. All cross-references still resolve
+3. No contradictions between documents
+4. Domain boundaries still respected
+5. ADR references in rule files still accurate
+
+## Quick Reference: Which Document?
+
+| Question | Document to Consult |
+|----------|-------------------|
+| What does the system do? | Root ARCHITECTURE.md |
+| Who owns feature X? | Root → Domain map |
+| How does domain Y work internally? | domains/Y/ARCHITECTURE.md |
+| What data does domain Y own? | domains/Y/ARCHITECTURE.md |
+| How do domains communicate? | Root + platform/integration |
+| What security controls apply? | cross-cutting/security |
+| How is the system deployed? | platform/infrastructure |
+| Why was decision Z made? | decisions/ADR-*.md |
+| What's changing soon? | proposals/RFC-*.md |

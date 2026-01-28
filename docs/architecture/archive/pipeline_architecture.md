@@ -19,6 +19,7 @@ Esta documentação foi dividida em documentos especializados para melhor compre
 3. **[Ferramentas (Tools)](tools.md)** - Documentação completa de todas as 11 ferramentas de código (Template Selector, Layout Resolver, Image Compositor, etc.)
 4. **[Gerenciamento de Memória](memory_management.md)** - Documentação completa do Coherence Brief e mecanismos de memória/contexto
 5. **[Estruturas de Dados](data_structures.md)** - Documentação completa de todas as estruturas de dados principais (JSON schemas)
+6. **[Sistema de Branding](branding.md)** - Documentação completa do sistema de branding, perfis de audiência e integração com o pipeline
 
 ---
 
@@ -316,6 +317,7 @@ Adicionar:
 - **[Ferramentas](tools.md)** - Todas as 11 ferramentas detalhadas
 - **[Gerenciamento de Memória](memory_management.md)** - Coherence Brief completo
 - **[Estruturas de Dados](data_structures.md)** - Todos os schemas JSON
+- **[Sistema de Branding](branding.md)** - Sistema de branding completo e integração com pipeline
 
 ### Documentação de Sistema
 

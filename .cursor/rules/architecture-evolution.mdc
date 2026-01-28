@@ -1,0 +1,488 @@
+---
+description: Rules governing architecture decisions, changes, and evolution processes
+globs: ["**/*"]
+alwaysApply: true
+priority: 0
+---
+
+# Architecture Evolution Rules
+
+## Purpose
+
+This file defines the mandatory process for making and documenting architectural decisions. Every significant change must follow this process. The goal is to ensure decisions are deliberate, documented, and reversible.
+
+> **AI Instruction**: When asked to make changes that affect system structure, component boundaries, data flow, or technology choices, you MUST follow this process. Do not proceed with implementation until the appropriate documentation exists or is created.
+
+## Decision Classification
+
+### Rule EVO-001: Change Impact Classification
+
+Before any change, classify its impact level:
+
+| Level | Criteria | Process Required | Approvers |
+|-------|----------|------------------|-----------|
+| **L1 - Trivial** | Single file, no API change, no new dependencies | Direct implementation | Self |
+| **L2 - Minor** | Multiple files, internal refactoring, no external impact | ADR (lightweight) | Tech Lead |
+| **L3 - Significant** | New component, API changes, new dependencies | Full ADR | Architecture Team |
+| **L4 - Major** | New service, technology change, breaking changes | RFC + ADR | Architecture Board |
+
+**Classification Decision Tree**:
+```
+Does it change public API contracts?
+├── Yes → L3 or L4
+└── No → Continue
+
+Does it add new external dependencies?
+├── Yes → L3 or L4
+└── No → Continue
+
+Does it change data models or storage?
+├── Yes → L3 or L4
+└── No → Continue
+
+Does it affect more than one bounded context?
+├── Yes → L4
+└── No → Continue
+
+Does it require infrastructure changes?
+├── Yes → L3 or L4
+└── No → L1 or L2
+```
+
+> **AI Instruction**: When uncertain about classification, choose the higher level. It's better to over-document than under-document architectural decisions.
+
+## Architecture Decision Records (ADR)
+
+### Rule EVO-002: ADR Creation Requirements
+
+An ADR is required when:
+- Introducing a new pattern or technology
+- Making a choice between significant alternatives
+- Establishing a constraint that will affect future decisions
+- Deprecating or replacing existing approaches
+
+An ADR is NOT required for:
+- Bug fixes
+- Performance optimizations within existing patterns
+- Implementing features using established patterns
+- Documentation updates
+
+### Rule EVO-003: ADR Structure
+
+Every ADR must follow this exact structure. Do not deviate.
+
+```markdown
+# ADR-{NUMBER}: {TITLE}
+
+## Status
+
+{Proposed | Accepted | Deprecated | Superseded by ADR-XXX}
+
+## Date
+
+{YYYY-MM-DD}
+
+## Context
+
+{Describe the situation that requires a decision. Include:
+- What problem or opportunity exists
+- What forces are at play
+- What constraints apply
+- Why this decision needs to be made now}
+
+## Decision
+
+{State the decision clearly and unambiguously. Start with "We will..."}
+
+## Alternatives Considered
+
+### Alternative 1: {Name}
+{Description}
+- **Pros**: {List benefits}
+- **Cons**: {List drawbacks}
+- **Why rejected**: {Specific reason}
+
+### Alternative 2: {Name}
+{Repeat structure}
+
+## Consequences
+
+### Positive
+- {Benefit 1}
+- {Benefit 2}
+
+### Negative
+- {Drawback 1}
+- {Mitigation strategy}
+
+### Neutral
+- {Side effect that is neither good nor bad}
+
+## Implementation Notes
+
+{Optional: Key implementation details, migration steps, or phasing plan}
+
+## References
+
+- {Link to RFC if applicable}
+- {Link to related ADRs}
+- {Link to external resources}
+
+## Derived Rules
+
+{List any rules in .mdc files that derive from this decision}
+- `architecture.mdc`: ARCH-XXX
+- `patterns.mdc`: PAT-XXX
+```
+
+### Rule EVO-004: ADR Lifecycle
+
+```
+┌──────────┐     ┌──────────┐     ┌──────────┐
+│ Proposed │────►│ Accepted │────►│Deprecated│
+└──────────┘     └──────────┘     └──────────┘
+                       │                │
+                       │                ▼
+                       │          ┌───────────┐
+                       └─────────►│Superseded │
+                                  └───────────┘
+```
+
+**Status Transitions**:
+- `Proposed → Accepted`: After review and approval
+- `Accepted → Deprecated`: When decision is no longer recommended but still valid
+- `Accepted → Superseded`: When replaced by a new ADR (must reference successor)
+- Never delete ADRs; they are historical record
+
+## Request for Comments (RFC)
+
+### Rule EVO-005: RFC Requirements
+
+An RFC is required for L4 changes:
+- New microservices or significant new components
+- Technology stack changes
+- Breaking changes to public APIs
+- Changes affecting multiple teams
+- Changes with estimated effort > 2 weeks
+
+### Rule EVO-006: RFC Structure
+
+```markdown
+# RFC-{NUMBER}: {TITLE}
+
+## Metadata
+
+- **Author**: {Name}
+- **Created**: {YYYY-MM-DD}
+- **Status**: {Draft | In Review | Approved | Rejected | Implemented}
+- **Reviewers**: {List of required reviewers}
+- **Target Date**: {Implementation target}
+
+## Summary
+
+{2-3 sentence executive summary}
+
+## Motivation
+
+{Why is this change needed? What problem does it solve?
+Include data, metrics, or user feedback if available.}
+
+## Detailed Design
+
+### Overview
+
+{High-level description of the proposed solution}
+
+### Architecture Diagram
+
+{Include Mermaid diagram or reference to diagram file}
+
+```mermaid
+graph TD
+    A[Component A] --> B[Component B]
+    B --> C[Component C]
+```
+
+### Component Details
+
+{For each new or modified component:}
+
+#### {Component Name}
+
+- **Responsibility**: {Single sentence}
+- **Interfaces**: {APIs exposed}
+- **Dependencies**: {Other components required}
+- **Data**: {Data owned or accessed}
+
+### Data Model Changes
+
+{Describe any schema changes, migrations needed}
+
+### API Changes
+
+{Describe new or modified APIs with examples}
+
+### Security Considerations
+
+{Authentication, authorization, data protection implications}
+
+### Observability
+
+{Logging, metrics, alerting additions}
+
+## Alternatives Considered
+
+{For each alternative:}
+
+### {Alternative Name}
+
+{Description, pros, cons, reason for rejection}
+
+## Migration Strategy
+
+### Phase 1: {Name}
+- **Duration**: {Estimate}
+- **Changes**: {What happens}
+- **Rollback**: {How to revert}
+
+### Phase 2: {Name}
+{Repeat}
+
+## Risks and Mitigations
+
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| {Risk 1} | High/Med/Low | High/Med/Low | {Strategy} |
+
+## Success Metrics
+
+{How will we know this change succeeded?}
+
+- Metric 1: {Description} - Target: {Value}
+- Metric 2: {Description} - Target: {Value}
+
+## Timeline
+
+| Milestone | Target Date | Status |
+|-----------|-------------|--------|
+| RFC Approved | {Date} | {Status} |
+| Phase 1 Complete | {Date} | {Status} |
+| Full Rollout | {Date} | {Status} |
+
+## Open Questions
+
+{List unresolved questions that need input}
+
+1. {Question 1}
+2. {Question 2}
+
+## References
+
+- {Related ADRs}
+- {External documentation}
+- {Research or benchmarks}
+
+---
+
+## Review Comments
+
+{Reviewers add comments below with date and name}
+
+### {Date} - {Reviewer Name}
+
+{Comment}
+```
+
+## Change Workflow
+
+### Rule EVO-007: Standard Change Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     CHANGE REQUEST RECEIVED                      │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 1: CLASSIFY CHANGE (EVO-001)                              │
+│  - Determine impact level (L1-L4)                               │
+│  - Identify affected components                                  │
+│  - List stakeholders                                            │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                    ┌───────────┼───────────┐
+                    ▼           ▼           ▼
+              ┌─────────┐ ┌─────────┐ ┌─────────┐
+              │ L1: Go  │ │L2/L3:ADR│ │ L4: RFC │
+              │ direct  │ │ required│ │  first  │
+              └─────────┘ └─────────┘ └─────────┘
+                    │           │           │
+                    │           ▼           ▼
+                    │    ┌─────────────────────┐
+                    │    │ STEP 2: DOCUMENT    │
+                    │    │ - Create ADR/RFC    │
+                    │    │ - Analyze alternatives│
+                    │    │ - Assess consequences│
+                    │    └─────────────────────┘
+                    │           │           │
+                    │           ▼           ▼
+                    │    ┌─────────────────────┐
+                    │    │ STEP 3: REVIEW      │
+                    │    │ - Submit for review │
+                    │    │ - Address feedback  │
+                    │    │ - Obtain approval   │
+                    │    └─────────────────────┘
+                    │           │           │
+                    └───────────┼───────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 4: IMPLEMENT                                              │
+│  - Follow the documented decision                               │
+│  - Update rule files if needed                                  │
+│  - Create feature branch                                        │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 5: VERIFY                                                 │
+│  - Ensure implementation matches ADR                            │
+│  - Update ARCHITECTURE.md if needed                             │
+│  - Update CHANGELOG.md                                          │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  STEP 6: CLOSE                                                  │
+│  - Mark ADR as Accepted                                         │
+│  - Update derived rules in .mdc files                           │
+│  - Communicate change to stakeholders                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Rule EVO-008: AI-Assisted Change Process
+
+When working with AI assistants, follow this modified workflow:
+
+**Before Implementation**:
+1. AI classifies the requested change per EVO-001
+2. If L2+, AI drafts the ADR/RFC before writing any code
+3. Human reviews and approves the draft
+4. Only then does AI proceed with implementation
+
+**During Implementation**:
+1. AI references the approved ADR for guidance
+2. AI flags any discovered issues that conflict with the ADR
+3. If significant deviation needed, AI pauses and proposes ADR amendment
+
+**After Implementation**:
+1. AI updates ARCHITECTURE.md to reflect changes
+2. AI updates relevant .mdc rule files
+3. AI adds entry to docs/architecture/evolution/CHANGELOG.md
+
+> **AI Instruction**: Follow this sequence strictly. Do not skip documentation steps to "save time." The documentation IS the deliverable, not overhead.
+
+## Version Control for Architecture Docs
+
+### Rule EVO-009: Documentation Location
+
+```
+docs/
+└── architecture/
+    ├── ARCHITECTURE.md          # Current state (always up to date)
+    ├── decisions/
+    │   ├── _template.md         # ADR template
+    │   ├── ADR-001-*.md
+    │   └── ADR-002-*.md
+    ├── proposals/
+    │   ├── _template.md         # RFC template
+    │   ├── RFC-001-*.md
+    │   └── RFC-002-*.md
+    ├── diagrams/
+    │   └── *.mermaid
+    └── evolution/
+        ├── CHANGELOG.md         # Architecture change log
+        └── exceptions/          # Temporary constraint exceptions
+```
+
+### Rule EVO-010: Numbering Conventions
+
+- ADRs: Sequential, never reused: `ADR-001`, `ADR-002`, ...
+- RFCs: Sequential, never reused: `RFC-001`, `RFC-002`, ...
+- Superseded documents keep original number, status shows successor
+
+## Change Log
+
+### Rule EVO-011: Architecture Changelog Format
+
+Maintain `docs/architecture/evolution/CHANGELOG.md` with this format:
+
+```markdown
+# Architecture Changelog
+
+All notable architectural changes to this project are documented here.
+
+## [Unreleased]
+
+### Added
+- {New components, patterns, or capabilities}
+
+### Changed
+- {Modifications to existing architecture}
+
+### Deprecated
+- {Features or patterns being phased out}
+
+### Removed
+- {Components or patterns removed}
+
+## [{Version}] - {YYYY-MM-DD}
+
+### Added
+- [ADR-005](../decisions/ADR-005-event-sourcing.md): Introduced event sourcing for audit trail
+
+### Changed
+- [ADR-006](../decisions/ADR-006-api-versioning.md): Migrated from URL versioning to header versioning
+```
+
+## Conflict Resolution
+
+### Rule EVO-012: Handling Conflicts
+
+When a proposed change conflicts with existing rules:
+
+1. **Identify the conflict explicitly**: State which rules are in tension
+2. **Evaluate precedence**: Security > Data Integrity > Performance > Convenience
+3. **Propose resolution**: Either modify the new proposal or update existing rules
+4. **Document the resolution**: Include conflict analysis in the ADR
+
+> **AI Instruction**: When you detect a conflict between a requested change and existing rules, STOP and report the conflict. Do not silently override rules. Present the conflict and propose options.
+
+### Rule EVO-013: Emergency Changes
+
+For production emergencies only:
+
+1. Implement minimal fix
+2. Create retrospective ADR within 48 hours
+3. Mark ADR with `## Emergency Context` section
+4. Follow up with proper design if needed
+
+Emergency changes do NOT exempt future work from proper process.
+
+## Continuous Improvement
+
+### Rule EVO-014: Architecture Review Cadence
+
+- **Weekly**: Review any pending ADRs/RFCs
+- **Monthly**: Review architecture metrics and technical debt
+- **Quarterly**: Full architecture review, update roadmap
+- **Annually**: Major version consideration, deprecation review
+
+### Rule EVO-015: Rule File Maintenance
+
+After any ADR is accepted:
+1. Identify rules that need creation or update
+2. Update appropriate .mdc files
+3. Add reference from rule to ADR
+4. Add reference from ADR to derived rules
+
+This bidirectional linking ensures traceability.
