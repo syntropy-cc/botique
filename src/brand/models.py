@@ -7,8 +7,10 @@ Location: src/brand/models.py
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
-from typing import Dict, List
+from typing import Dict, List, Optional
+import json
 
 
 # =============================================================================
@@ -220,3 +222,66 @@ class VisualStyle:
             "best_for_audiences": self.best_for_audiences,
             "mood_keywords": self.mood_keywords,
         }
+
+
+# =============================================================================
+# AUDIENCE PROFILE
+# =============================================================================
+
+@dataclass
+class AudienceProfile:
+    """
+    Audience profile model for database-backed profiles.
+    
+    Represents a complete audience persona profile stored in the database.
+    The profile_data field contains the full profile structure as a dict.
+    """
+    
+    id: str
+    persona_type: str
+    name: str
+    description: Optional[str] = None
+    profile_data: Dict = field(default_factory=dict)
+    created_at: str = ""
+    updated_at: str = ""
+    version: int = 1
+    is_active: bool = True
+    
+    def to_dict(self) -> Dict:
+        """Export profile as dictionary."""
+        return {
+            "id": self.id,
+            "persona_type": self.persona_type,
+            "name": self.name,
+            "description": self.description,
+            "profile_data": self.profile_data,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "version": self.version,
+            "is_active": self.is_active,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> "AudienceProfile":
+        """Create profile from dictionary."""
+        return cls(
+            id=data.get("id", ""),
+            persona_type=data.get("persona_type", ""),
+            name=data.get("name", ""),
+            description=data.get("description"),
+            profile_data=data.get("profile_data", {}),
+            created_at=data.get("created_at", ""),
+            updated_at=data.get("updated_at", ""),
+            version=data.get("version", 1),
+            is_active=data.get("is_active", True),
+        )
+    
+    def to_json(self) -> str:
+        """Export profile as JSON string."""
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+    
+    @classmethod
+    def from_json(cls, json_str: str) -> "AudienceProfile":
+        """Create profile from JSON string."""
+        data = json.loads(json_str)
+        return cls.from_dict(data)

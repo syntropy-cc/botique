@@ -57,13 +57,17 @@ graph TB
     PIPELINE -->|orchestrates| VISUAL
     PIPELINE -->|orchestrates| CAPTION
     MEMORY[Memory Domain] -->|provides context| ARCHITECT
+    MEMORY -->|provides context| IDEATOR
     MEMORY -->|provides context| COPYWRITER
     MEMORY -->|provides context| VISUAL
     MEMORY -->|provides context| CAPTION
+    MEMORY -->|enriched by| IDEATOR
     MEMORY -->|enriched by| ARCHITECT
     MEMORY -->|enriched by| COPYWRITER
     MEMORY -->|enriched by| VISUAL
     MEMORY -->|enriched by| CAPTION
+    BRANDING[Branding Domain] -->|provides audience profile| IDEATOR
+    BRANDING -->|provides visual assets| VISUAL
     
     style IDEATOR fill:#b3d9ff
     style ARCHITECT fill:#b3d9ff
@@ -101,6 +105,7 @@ C4Container
     
     System_Ext(pipeline, "Pipeline Domain", "Orchestrates agents")
     System_Ext(memory, "Memory Domain", "Coherence Brief")
+    System_Ext(branding, "Branding Domain", "Audience profiles, visual assets")
     System_Ext(llm, "LLM Provider", "DeepSeek, OpenAI")
     
     Rel(pipeline, ideator, "Executes", "Phase 1")
@@ -113,9 +118,11 @@ C4Container
     Rel(copywriter, llm, "Calls", "API")
     Rel(visual, llm, "Calls", "API")
     Rel(caption, llm, "Calls", "API")
+    Rel(ideator, branding, "Queries", "Audience profile")
     Rel(architect, memory, "Reads/Writes", "Brief")
     Rel(copywriter, memory, "Reads/Writes", "Brief")
     Rel(visual, memory, "Reads/Writes", "Brief")
+    Rel(visual, branding, "Uses", "Visual assets")
     Rel(caption, memory, "Reads/Writes", "Brief")
 ```
 
@@ -125,7 +132,7 @@ C4Container
 
 | Attribute | Value |
 |-----------|-------|
-| **Responsibility** | Analyze article and generate 3-6 post ideas with per-post configuration |
+| **Responsibility** | Analyze article and generate 3-6 post ideas with per-post configuration, guided by branding context |
 | **Technology** | Python, LLM (DeepSeek/OpenAI) |
 | **Location** | `src/phases/phase1_ideation.py` |
 | **Prompt** | `prompts/post_ideator.md` |
@@ -133,6 +140,7 @@ C4Container
 **Inputs**:
 - `article.txt` (complete article)
 - Ideation configuration (number of ideas, filters)
+- Audience profile from Branding Domain (when available, based on user-specified platform or persona)
 
 **Outputs**:
 - `post_ideas.json` with:
@@ -144,8 +152,26 @@ C4Container
 - ✅ Defines per-post configuration (platform, tone, persona)
 - ✅ Extracts key insights from article
 - ✅ Estimates number of slides per idea
+- ✅ Uses audience profile guidance (pain points, desires, content preferences)
+- ✅ Considers brand values in ideation
 
-**Context Used**: None (first agent, doesn't use Coherence Brief)
+**Context Used**: Audience Profile from Branding Domain
+- **Source**: Branding Domain's Audience Repository
+- **Lookup**: Based on user-specified `platform` or `persona` (if provided)
+- **Fields Used**:
+  - `pain_points` - Guides idea angles and messaging
+  - `desires` - Informs value propositions and hooks
+  - `content_preferences` - Influences format and structure suggestions
+  - `communication_style` - Guides tone and formality recommendations
+  - `brand_values` - Ensures alignment with brand identity
+  - `emotional_triggers` - Informs target emotions per idea
+
+**Branding Integration**:
+- **Principle**: Branding enriches but never overrides user-defined parameters
+- If user specifies `platform: "linkedin"`, ideas are generated for LinkedIn regardless of audience profile preferences
+- Audience profile provides strategic guidance for content direction, pain points, and messaging style
+- Brand values are considered to ensure ideas align with brand identity
+- See [Branding Domain Architecture](../branding/ARCHITECTURE.md) for integration details
 
 **Example Output**:
 ```json
@@ -341,6 +367,7 @@ C4Container
 
 ```mermaid
 flowchart TD
+    BRANDING[Branding Domain] -.->|audience profile| A
     A[Post Ideator<br/>Phase 1] -->|post_ideas.json| B[Idea Selector<br/>Code]
     B -->|selected_idea| C[Coherence Brief Builder<br/>Code]
     C -->|coherence_brief.json| D[Narrative Architect<br/>Phase 3]
@@ -359,7 +386,10 @@ flowchart TD
     style F fill:#e8f5e9
     style G fill:#e8f5e9
     style J fill:#f3e5f5
+    style BRANDING fill:#fff9e6
 ```
+
+**Note**: The Post Ideator receives audience profile context from the Branding Domain (dashed line) to guide idea generation. This context enriches but never overrides user-defined parameters (platform, tone, persona).
 
 ## Design Principles
 
@@ -448,6 +478,7 @@ Services this domain depends on to function.
 | **LLM Provider** | API | Critical | None (required) |
 | **Memory Domain** | Brief storage | Critical | None (required) |
 | **Pipeline Domain** | Orchestration | Critical | None (required) |
+| **Branding Domain** | Audience profiles | Important | Continue without profile (reduced guidance) |
 
 ### Downstream Dependents
 
@@ -481,5 +512,6 @@ Services that depend on this domain.
 
 - [System Architecture](../../ARCHITECTURE.md) - Root architecture document
 - [Pipeline Domain](../pipeline/ARCHITECTURE.md) - How agents are orchestrated
+- [Branding Domain](../branding/ARCHITECTURE.md) - Audience profiles and visual assets that guide agents
 - [Tools Domain](../tools/ARCHITECTURE.md) - Code tools that complement agents
 - [Memory Domain](../memory/ARCHITECTURE.md) - Coherence Brief context system

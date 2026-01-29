@@ -9,9 +9,23 @@ Contains comprehensive information about three personas:
 - Developer profile (Independent devs)
 
 Location: src/brand/audience.py
+
+Note: This module now uses database-backed repository (AudienceRepository)
+      with fallback to in-memory AUDIENCE_PROFILES for backward compatibility.
 """
 
+import logging
 from typing import Any, Dict, Optional, List
+
+logger = logging.getLogger(__name__)
+
+# Try to import repository (may fail if database not initialized)
+try:
+    from .audience_repo import get_repository
+    _REPOSITORY_AVAILABLE = True
+except ImportError:
+    _REPOSITORY_AVAILABLE = False
+    logger.warning("AudienceRepository not available, using in-memory profiles")
 
 
 # =============================================================================
@@ -974,29 +988,76 @@ def get_audience_profile(persona: str) -> Optional[Dict[str, Any]]:
     """
     Get detailed audience profile for persona.
     
+    Tries to load from database first, falls back to in-memory AUDIENCE_PROFILES
+    for backward compatibility.
+    
     Args:
-        persona: Persona string (can be partial match)
+        persona: Persona string (can be partial match or exact persona_type)
     
     Returns:
         Audience profile dict or None if not found
     """
+    # Try repository first (database-backed)
+    if _REPOSITORY_AVAILABLE:
+        try:
+            repo = get_repository()
+            
+            # Try exact match first
+            profile = repo.get_profile(persona)
+            if profile:
+                # Remove metadata before returning (for backward compatibility)
+                profile.pop("_metadata", None)
+                return profile
+            
+            # Try to infer persona_type from persona string
+            persona_lower = persona.lower()
+            
+            if any(x in persona_lower for x in [
+                "c-level", "executive", "decisor", "ceo", "cto", "cfo", "coo", "cmo"
+            ]):
+                profile = repo.get_profile("c_level")
+                if profile:
+                    profile.pop("_metadata", None)
+                    return profile
+            
+            elif any(x in persona_lower for x in [
+                "founder", "fundador", "visionário", "startup", "empreendedor", "co-founder"
+            ]):
+                profile = repo.get_profile("founder")
+                if profile:
+                    profile.pop("_metadata", None)
+                    return profile
+            
+            elif any(x in persona_lower for x in [
+                "developer", "dev", "desenvolvedor", "forjador", "engineer", "programmer"
+            ]):
+                profile = repo.get_profile("developer")
+                if profile:
+                    profile.pop("_metadata", None)
+                    return profile
+        
+        except Exception as e:
+            logger.warning(f"Failed to load profile from repository: {e}, falling back to in-memory")
+    
+    # Fallback to in-memory AUDIENCE_PROFILES (backward compatibility)
+    logger.debug("Using in-memory AUDIENCE_PROFILES (fallback mode)")
     persona_lower = persona.lower()
     
     # Match keywords to audience types
     if any(x in persona_lower for x in [
         "c-level", "executive", "decisor", "ceo", "cto", "cfo", "coo", "cmo"
     ]):
-        return AUDIENCE_PROFILES["c_level"]
+        return AUDIENCE_PROFILES.get("c_level")
     
     elif any(x in persona_lower for x in [
         "founder", "fundador", "visionário", "startup", "empreendedor", "co-founder"
     ]):
-        return AUDIENCE_PROFILES["founder"]
+        return AUDIENCE_PROFILES.get("founder")
     
     elif any(x in persona_lower for x in [
         "developer", "dev", "desenvolvedor", "forjador", "engineer", "programmer"
     ]):
-        return AUDIENCE_PROFILES["developer"]
+        return AUDIENCE_PROFILES.get("developer")
     
     return None
 
