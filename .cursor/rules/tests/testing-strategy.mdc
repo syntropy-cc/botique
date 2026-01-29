@@ -1,0 +1,493 @@
+---
+description: Core testing strategy, principles, and quality standards
+globs: ["**/*.test.*", "**/*.spec.*", "**/test_*", "**/tests/**"]
+alwaysApply: true
+priority: 1
+---
+
+# Testing Strategy Rules
+
+## Purpose
+
+This file defines the testing philosophy, standards, and requirements for the project. Every test written must comply with these rules. Quality tests are not optional; they are a fundamental deliverable alongside production code.
+
+> **AI Instruction**: When asked to write tests, do not produce superficial tests that merely call functions. Write tests that verify behavior, handle edge cases, and would catch real bugs. Consult this file and related testing rules before writing any test.
+
+## Testing Philosophy
+
+### Rule TEST-001: Tests as Specification
+
+Tests serve as executable specifications of system behavior. A well-written test suite should allow someone unfamiliar with the code to understand what the system does by reading the tests alone.
+
+**Test names must describe behavior, not implementation**:
+
+```python
+# CORRECT: Describes the behavior being verified
+def test_user_registration_fails_when_email_already_exists():
+    ...
+
+def test_order_total_includes_tax_for_taxable_items():
+    ...
+
+def test_payment_is_refunded_when_order_is_cancelled_within_24_hours():
+    ...
+
+# INCORRECT: Describes implementation or is vague
+def test_create_user():  # What about create_user?
+    ...
+
+def test_calculate_total():  # What should happen?
+    ...
+
+def test_process_payment_error():  # What kind of error? What should happen?
+    ...
+```
+
+### Rule TEST-002: Test Independence
+
+Each test must be completely independent. Tests must not rely on execution order, shared mutable state, or side effects from other tests.
+
+**Requirements**:
+- Each test sets up its own preconditions
+- Each test cleans up after itself (or uses fixtures that do)
+- Tests can run in any order
+- Tests can run in parallel without interference
+
+```python
+# CORRECT: Test is self-contained
+def test_user_can_update_profile(db_session, user_factory):
+    # Arrange: Create fresh test data
+    user = user_factory.create()
+    
+    # Act
+    user.update_profile(name="New Name")
+    
+    # Assert
+    assert user.name == "New Name"
+
+# INCORRECT: Depends on state from other tests
+def test_update_profile():
+    # Relies on user created in previous test
+    user = User.query.first()  # Which user? What if test runs first?
+    user.update_profile(name="New Name")
+    assert user.name == "New Name"
+```
+
+### Rule TEST-003: Deterministic Tests
+
+Tests must produce the same result every time they run. Flaky tests erode confidence and waste debugging time.
+
+**Banned in tests**:
+- `time.time()` or `datetime.now()` without mocking
+- `random.random()` without seeding
+- Network calls to external services without mocking
+- File system operations on non-isolated paths
+- Sleep/delays for synchronization (use proper waits)
+
+```python
+# CORRECT: Deterministic time handling
+def test_subscription_expires_after_30_days(freeze_time):
+    with freeze_time("2024-01-01"):
+        subscription = create_subscription()
+    
+    with freeze_time("2024-01-30"):
+        assert subscription.is_active() is True
+    
+    with freeze_time("2024-02-01"):
+        assert subscription.is_active() is False
+
+# INCORRECT: Non-deterministic
+def test_subscription_expiry():
+    subscription = create_subscription()  # Uses real time
+    # This test will behave differently depending on when it runs
+```
+
+## Test Pyramid
+
+### Rule TEST-004: Test Distribution
+
+Follow the test pyramid. More tests at lower levels, fewer at higher levels.
+
+```
+                    ┌───────────┐
+                    │    E2E    │  ~5%   Slow, brittle, high confidence
+                   ─┴───────────┴─
+                  ┌───────────────┐
+                  │  Integration  │  ~15%  Medium speed, real dependencies
+                 ─┴───────────────┴─
+                ┌───────────────────┐
+                │    Component      │  ~20%  Fast, isolated components
+               ─┴───────────────────┴─
+              ┌───────────────────────┐
+              │        Unit          │  ~60%  Very fast, isolated logic
+             ─┴───────────────────────┴─
+```
+
+**Distribution targets** (adjust per project):
+- Unit tests: 60% of test count
+- Component tests: 20% of test count
+- Integration tests: 15% of test count
+- E2E tests: 5% of test count
+
+> **AI Instruction**: When asked to "write tests" without specification, default to unit tests. Only write integration or E2E tests when explicitly requested or when the code under test inherently requires integration (e.g., repository implementations).
+
+### Rule TEST-005: Test Level Selection
+
+Choose the appropriate test level based on what you're testing:
+
+| What to Test | Test Level | Rationale |
+|--------------|------------|-----------|
+| Pure functions, calculations | Unit | No dependencies, fast |
+| Domain entities, value objects | Unit | Business logic isolation |
+| Use cases, services | Unit + Component | Mock dependencies |
+| Repository implementations | Integration | Needs real database |
+| API endpoints | Integration | Needs HTTP stack |
+| External service adapters | Integration | Needs real or simulated service |
+| User workflows | E2E | Full system verification |
+| Critical business paths | E2E | High-value scenarios |
+
+## Test Structure
+
+### Rule TEST-006: Arrange-Act-Assert Pattern
+
+Every test follows the AAA pattern with clear visual separation:
+
+```python
+def test_order_calculation_applies_bulk_discount():
+    # Arrange: Set up preconditions and inputs
+    product = Product(price=Decimal("100.00"))
+    order = Order()
+    order.add_item(product, quantity=10)  # Bulk threshold is 5
+    
+    # Act: Execute the behavior under test
+    total = order.calculate_total()
+    
+    # Assert: Verify the expected outcome
+    assert total == Decimal("900.00")  # 10% bulk discount applied
+```
+
+**Rules**:
+- One logical action in the Act phase
+- Comments for AAA sections are optional but phases must be visually distinct
+- Arrange can be extracted to fixtures for reuse
+- Assert phase should verify one logical concept (may require multiple assertions)
+
+### Rule TEST-007: Test Naming Convention
+
+Test names follow this pattern:
+```
+test_<unit>_<behavior>_<condition>
+```
+
+Or in BDD style:
+```
+test_<given>_<when>_<then>
+```
+
+**Examples**:
+```python
+# Unit + Behavior + Condition style
+def test_password_validation_fails_when_shorter_than_8_characters():
+def test_order_total_includes_shipping_when_below_free_shipping_threshold():
+def test_user_login_locks_account_after_5_failed_attempts():
+
+# BDD style
+def test_given_empty_cart_when_checkout_then_raises_error():
+def test_given_premium_user_when_ordering_then_free_shipping_applied():
+```
+
+### Rule TEST-008: Single Concept Per Test
+
+Each test verifies exactly one behavior or concept. If you need multiple assertions, they should all relate to the same behavior.
+
+```python
+# CORRECT: Multiple assertions for single concept
+def test_user_registration_creates_complete_profile():
+    user = register_user(email="test@example.com", name="Test User")
+    
+    # All assertions verify the same concept: complete profile creation
+    assert user.id is not None
+    assert user.email == "test@example.com"
+    assert user.name == "Test User"
+    assert user.created_at is not None
+
+# INCORRECT: Testing multiple behaviors
+def test_user_operations():
+    # Testing registration
+    user = register_user(email="test@example.com")
+    assert user.id is not None
+    
+    # Testing login - different behavior!
+    token = login(user.email, "password")
+    assert token is not None
+    
+    # Testing profile update - another behavior!
+    user.update_name("New Name")
+    assert user.name == "New Name"
+```
+
+## Coverage Requirements
+
+### Rule TEST-009: Coverage Targets
+
+Minimum coverage requirements by component type:
+
+| Component Type | Line Coverage | Branch Coverage | Mutation Score |
+|----------------|---------------|-----------------|----------------|
+| Domain logic | 90% | 85% | 80% |
+| Application services | 85% | 80% | 70% |
+| API endpoints | 80% | 75% | - |
+| Infrastructure | 70% | 60% | - |
+| Utilities | 90% | 85% | 75% |
+
+**Critical paths** (identified in architecture docs) require 95% line coverage.
+
+> **AI Instruction**: Coverage is necessary but not sufficient. High coverage with weak assertions provides false confidence. Prioritize testing meaningful behaviors over hitting coverage numbers.
+
+### Rule TEST-010: What Not to Test
+
+Do not write tests for:
+- Trivial getters/setters with no logic
+- Framework code (it's already tested)
+- Private methods directly (test through public interface)
+- Third-party library internals
+- Configuration files (use validation instead)
+
+**Do test**:
+- Any code with conditional logic
+- Any code with calculations
+- Any code that transforms data
+- Any code that could fail
+- Any code that has failed before (regression tests)
+
+## Test Data
+
+### Rule TEST-011: Test Data Principles
+
+Test data must be:
+- **Minimal**: Only include data relevant to the test
+- **Explicit**: Values should be obviously test data
+- **Meaningful**: Values should relate to what's being tested
+
+```python
+# CORRECT: Minimal, explicit, meaningful
+def test_age_verification_rejects_minors():
+    user = User(
+        date_of_birth=date(2010, 1, 1),  # Obviously a minor
+        # Only include fields relevant to age verification
+    )
+    
+    result = verify_age(user, minimum_age=18)
+    
+    assert result.is_allowed is False
+
+# INCORRECT: Excessive, magic values
+def test_age_verification():
+    user = User(
+        id=12345,
+        email="test@test.com",
+        name="John Doe",
+        date_of_birth=date(2010, 5, 23),  # Why this date?
+        address="123 Main St",
+        phone="555-1234",
+        # ... many irrelevant fields
+    )
+    result = verify_age(user, minimum_age=18)
+    assert result.is_allowed is False
+```
+
+### Rule TEST-012: Factory Pattern for Test Data
+
+Use factories for creating test objects. This centralizes object creation and makes tests resilient to schema changes.
+
+```python
+# In tests/factories.py
+class UserFactory:
+    @staticmethod
+    def create(
+        email: str = "user@example.com",
+        name: str = "Test User",
+        is_active: bool = True,
+        **overrides
+    ) -> User:
+        return User(
+            email=email,
+            name=name,
+            is_active=is_active,
+            **overrides
+        )
+
+# In test file
+def test_inactive_users_cannot_login(user_factory):
+    user = user_factory.create(is_active=False)
+    
+    with pytest.raises(InactiveAccountError):
+        login(user.email, "password")
+```
+
+## Mocking Guidelines
+
+### Rule TEST-013: Mock at Boundaries
+
+Mock external dependencies at system boundaries, not internal collaborators.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     System Under Test                        │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐              │
+│  │ Service  │───▶│  Domain  │───▶│Repository│──────────────┼──▶ Mock Here
+│  └──────────┘    └──────────┘    └──────────┘   Boundary   │    (Database)
+│       │                                                      │
+│       └──────────────────────────────────────────────────────┼──▶ Mock Here
+│                                              Boundary        │    (External API)
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Mock**:
+- Databases (via repository interfaces)
+- External HTTP APIs
+- File system (when not testing file operations)
+- System clock
+- Random number generators
+- Message queues
+
+**Do NOT mock**:
+- Domain objects
+- Value objects
+- Pure utility functions
+- Internal service collaborators (usually)
+
+### Rule TEST-014: Mock Behavior, Not Implementation
+
+Mocks should simulate behavior, not verify implementation details.
+
+```python
+# CORRECT: Verify behavior
+def test_order_service_sends_confirmation_email(mock_email_service):
+    order = create_order()
+    
+    order_service.complete_order(order)
+    
+    # Verify the behavior: an email was sent
+    mock_email_service.send_email.assert_called_once()
+    call_args = mock_email_service.send_email.call_args
+    assert call_args.kwargs["to"] == order.customer_email
+    assert "confirmation" in call_args.kwargs["subject"].lower()
+
+# INCORRECT: Over-specified mock verification
+def test_order_service_sends_confirmation_email(mock_email_service):
+    order = create_order()
+    
+    order_service.complete_order(order)
+    
+    # This is too coupled to implementation
+    mock_email_service.send_email.assert_called_once_with(
+        to="specific@email.com",
+        subject="Order #12345 Confirmed",  # Exact string match
+        body="...",  # Exact body match
+        template_id="order_confirmation_v2",  # Implementation detail
+        priority=1,  # Implementation detail
+    )
+```
+
+## Assertions
+
+### Rule TEST-015: Assertion Quality
+
+Assertions must be specific and produce helpful failure messages.
+
+```python
+# CORRECT: Specific assertion with context
+def test_discount_calculation():
+    result = calculate_discount(subtotal=Decimal("100"), code="SAVE20")
+    
+    assert result.discount_amount == Decimal("20.00"), \
+        f"Expected 20% discount on $100, got {result.discount_amount}"
+    assert result.final_total == Decimal("80.00")
+
+# INCORRECT: Vague assertion
+def test_discount_calculation():
+    result = calculate_discount(subtotal=Decimal("100"), code="SAVE20")
+    
+    assert result is not None  # Passes even if calculation is wrong
+    assert result.discount_amount  # Truthy check, not value check
+```
+
+### Rule TEST-016: Assertion Patterns
+
+Use appropriate assertion patterns:
+
+| Scenario | Pattern | Example |
+|----------|---------|---------|
+| Exact equality | `assert x == expected` | `assert total == Decimal("100")` |
+| Approximate equality | `assert x == pytest.approx(expected)` | For floating point |
+| Contains | `assert item in collection` | `assert "error" in message` |
+| Exception raised | `pytest.raises(ExceptionType)` | See below |
+| Multiple conditions | Custom matchers or multiple asserts | Group related checks |
+
+**Exception testing pattern**:
+```python
+def test_withdrawal_fails_on_insufficient_funds():
+    account = Account(balance=Decimal("50"))
+    
+    with pytest.raises(InsufficientFundsError) as exc_info:
+        account.withdraw(Decimal("100"))
+    
+    assert exc_info.value.available == Decimal("50")
+    assert exc_info.value.requested == Decimal("100")
+```
+
+## Performance
+
+### Rule TEST-017: Test Speed Requirements
+
+| Test Level | Maximum Duration | Typical Duration |
+|------------|------------------|------------------|
+| Unit test | 100ms | < 10ms |
+| Component test | 500ms | < 100ms |
+| Integration test | 5s | < 1s |
+| E2E test | 30s | < 10s |
+
+**Full test suite** should complete in under 10 minutes for CI/CD.
+
+> **AI Instruction**: If a unit test requires sleeps, database calls, or network access, it's not a unit test. Refactor to use mocks or reclassify the test.
+
+## Documentation
+
+### Rule TEST-018: Test Documentation
+
+Document complex test scenarios and non-obvious assertions:
+
+```python
+def test_proration_calculates_correctly_for_mid_month_upgrade():
+    """
+    Scenario: User upgrades from Basic ($10/mo) to Pro ($30/mo) on day 15 of a 30-day month.
+    
+    Expected calculation:
+    - Unused Basic credit: $10 * (15/30) = $5.00
+    - Pro charge for remaining days: $30 * (15/30) = $15.00
+    - Amount due: $15.00 - $5.00 = $10.00
+    
+    Reference: Billing specification section 4.2.1
+    """
+    subscription = create_subscription(
+        plan="basic",
+        started_at=date(2024, 1, 1),
+        monthly_price=Decimal("10.00")
+    )
+    
+    with freeze_time("2024-01-15"):
+        charge = subscription.upgrade_to(
+            plan="pro",
+            monthly_price=Decimal("30.00")
+        )
+    
+    assert charge.amount == Decimal("10.00")
+```
+
+## References
+
+| Rule | Related ADR |
+|------|-------------|
+| TEST-004 | ADR-XXX (Testing Strategy) |
+| TEST-009 | ADR-XXX (Coverage Requirements) |

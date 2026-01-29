@@ -1,0 +1,665 @@
+---
+description: Rules for end-to-end testing and contract testing
+globs: ["**/e2e/**", "**/*.e2e.test.*", "**/contracts/**"]
+alwaysApply: false
+priority: 2
+---
+
+# End-to-End and Contract Testing Rules
+
+## Purpose
+
+End-to-end tests verify that the entire system works correctly from the user's perspective. Contract tests verify that services communicate correctly according to agreed contracts. Both are essential for distributed systems but expensive to maintain, so they must be used strategically.
+
+> **AI Instruction**: E2E tests should be rare and focused on critical user journeys. Do not write E2E tests for functionality that can be verified through unit or integration tests. Contract tests should cover all service boundaries where teams work independently.
+
+## E2E Testing Philosophy
+
+### Rule E2E-001: Test Critical Paths Only
+
+E2E tests should cover only the most important user journeys. These are typically revenue-generating paths or core functionality that, if broken, would make the product unusable.
+
+**Good candidates for E2E tests**:
+- User registration and login
+- Core purchase/checkout flow
+- Primary data creation workflows
+- Critical business transactions
+
+**Poor candidates for E2E tests**:
+- Admin settings pages
+- Edge case error handling
+- Features with low usage
+- Cosmetic UI variations
+
+```python
+# Critical path: User can complete a purchase
+@pytest.mark.e2e
+def test_user_can_complete_purchase_flow(browser, test_user):
+    """
+    Critical Path: Purchase Flow
+    
+    This test verifies the complete purchase journey that generates revenue.
+    If this breaks, customers cannot buy products.
+    
+    Steps:
+    1. User logs in
+    2. User searches for product
+    3. User adds product to cart
+    4. User proceeds to checkout
+    5. User enters payment information
+    6. User completes purchase
+    7. User receives confirmation
+    """
+    # Login
+    browser.goto("/login")
+    browser.fill("input[name=email]", test_user.email)
+    browser.fill("input[name=password]", test_user.password)
+    browser.click("button[type=submit]")
+    
+    # Search and add to cart
+    browser.fill("input[name=search]", "Test Product")
+    browser.click("button[aria-label=Search]")
+    browser.click("text=Test Product")
+    browser.click("button:has-text('Add to Cart')")
+    
+    # Checkout
+    browser.click("a:has-text('Checkout')")
+    browser.fill("input[name=card_number]", "4242424242424242")
+    browser.fill("input[name=expiry]", "12/25")
+    browser.fill("input[name=cvv]", "123")
+    browser.click("button:has-text('Complete Purchase')")
+    
+    # Verify confirmation
+    assert browser.is_visible("text=Order Confirmed")
+    assert browser.is_visible("text=Order #")
+```
+
+### Rule E2E-002: E2E Test Structure
+
+E2E tests follow a strict structure to maximize clarity and maintainability:
+
+```python
+@pytest.mark.e2e
+class TestCheckoutFlow:
+    """E2E tests for the checkout flow."""
+    
+    # Document the user journey
+    """
+    User Journey: Guest Checkout
+    
+    Preconditions:
+    - Product "Widget A" exists and is in stock
+    - Payment processor is available
+    
+    Expected Outcome:
+    - Order is created
+    - Payment is processed
+    - Confirmation email is sent
+    - Inventory is decremented
+    """
+    
+    @pytest.fixture
+    def seeded_product(self, api_client):
+        """Create test product via API (not UI)."""
+        return api_client.create_product(
+            name="Test Widget",
+            price=29.99,
+            stock=100
+        )
+    
+    def test_guest_can_checkout_single_item(self, browser, seeded_product):
+        # Use Page Object pattern for maintainability
+        product_page = ProductPage(browser)
+        cart_page = CartPage(browser)
+        checkout_page = CheckoutPage(browser)
+        confirmation_page = ConfirmationPage(browser)
+        
+        # Navigate and add to cart
+        product_page.goto(seeded_product.id)
+        product_page.add_to_cart()
+        
+        # Proceed to checkout
+        cart_page.goto()
+        cart_page.proceed_to_checkout()
+        
+        # Fill checkout form
+        checkout_page.fill_shipping_address(
+            name="Test Customer",
+            address="123 Test St",
+            city="Test City",
+            postal_code="12345"
+        )
+        checkout_page.fill_payment(
+            card_number="4242424242424242",
+            expiry="12/25",
+            cvv="123"
+        )
+        checkout_page.place_order()
+        
+        # Verify outcome
+        assert confirmation_page.is_displayed()
+        assert confirmation_page.get_order_number() is not None
+        assert "Test Widget" in confirmation_page.get_order_items()
+```
+
+### Rule E2E-003: Page Object Pattern
+
+Use the Page Object pattern to isolate UI selectors from test logic:
+
+```python
+# pages/product_page.py
+class ProductPage:
+    """Page object for product detail page."""
+    
+    def __init__(self, browser):
+        self.browser = browser
+        
+        # Selectors defined in one place
+        self.selectors = {
+            "add_to_cart": "button[data-testid='add-to-cart']",
+            "quantity_input": "input[data-testid='quantity']",
+            "price": "[data-testid='product-price']",
+            "name": "h1[data-testid='product-name']",
+            "out_of_stock": "[data-testid='out-of-stock-message']"
+        }
+    
+    def goto(self, product_id: str):
+        self.browser.goto(f"/products/{product_id}")
+        self.browser.wait_for_selector(self.selectors["name"])
+    
+    def add_to_cart(self, quantity: int = 1):
+        if quantity > 1:
+            self.browser.fill(self.selectors["quantity_input"], str(quantity))
+        self.browser.click(self.selectors["add_to_cart"])
+        # Wait for cart update confirmation
+        self.browser.wait_for_selector("text=Added to cart")
+    
+    def get_price(self) -> Decimal:
+        text = self.browser.text_content(self.selectors["price"])
+        return Decimal(text.replace("$", ""))
+    
+    def is_in_stock(self) -> bool:
+        return not self.browser.is_visible(self.selectors["out_of_stock"])
+
+
+# pages/checkout_page.py
+class CheckoutPage:
+    """Page object for checkout flow."""
+    
+    def __init__(self, browser):
+        self.browser = browser
+        self.selectors = {
+            "shipping_name": "input[name='shipping.name']",
+            "shipping_address": "input[name='shipping.address']",
+            "shipping_city": "input[name='shipping.city']",
+            "shipping_postal": "input[name='shipping.postal_code']",
+            "card_number": "input[name='payment.card_number']",
+            "card_expiry": "input[name='payment.expiry']",
+            "card_cvv": "input[name='payment.cvv']",
+            "place_order": "button[data-testid='place-order']",
+            "error_message": "[data-testid='checkout-error']"
+        }
+    
+    def fill_shipping_address(self, name: str, address: str, city: str, postal_code: str):
+        self.browser.fill(self.selectors["shipping_name"], name)
+        self.browser.fill(self.selectors["shipping_address"], address)
+        self.browser.fill(self.selectors["shipping_city"], city)
+        self.browser.fill(self.selectors["shipping_postal"], postal_code)
+    
+    def fill_payment(self, card_number: str, expiry: str, cvv: str):
+        # Card input might be in iframe
+        frame = self.browser.frame_locator("iframe[name='card-frame']")
+        frame.locator("input[name='number']").fill(card_number)
+        frame.locator("input[name='expiry']").fill(expiry)
+        frame.locator("input[name='cvv']").fill(cvv)
+    
+    def place_order(self):
+        self.browser.click(self.selectors["place_order"])
+    
+    def get_error_message(self) -> str | None:
+        if self.browser.is_visible(self.selectors["error_message"]):
+            return self.browser.text_content(self.selectors["error_message"])
+        return None
+```
+
+### Rule E2E-004: Test Data Management for E2E
+
+E2E tests need isolated, reproducible test data:
+
+```python
+# conftest.py for E2E tests
+
+@pytest.fixture(scope="session")
+def api_client():
+    """API client for test data setup (bypass UI)."""
+    return TestAPIClient(
+        base_url=E2E_API_URL,
+        api_key=E2E_API_KEY
+    )
+
+@pytest.fixture
+def test_user(api_client):
+    """Create isolated test user."""
+    user = api_client.create_user(
+        email=f"test-{uuid.uuid4()}@example.com",
+        password="TestPassword123!"
+    )
+    yield user
+    # Cleanup
+    api_client.delete_user(user.id)
+
+@pytest.fixture
+def seeded_products(api_client):
+    """Create standard product catalog for testing."""
+    products = [
+        api_client.create_product(name="Widget A", price=10.00, stock=100),
+        api_client.create_product(name="Widget B", price=25.00, stock=50),
+        api_client.create_product(name="Widget C", price=100.00, stock=10),
+    ]
+    yield products
+    # Cleanup
+    for product in products:
+        api_client.delete_product(product.id)
+
+@pytest.fixture
+def clean_state(api_client, test_user):
+    """Ensure clean state before test."""
+    api_client.clear_cart(test_user.id)
+    api_client.cancel_pending_orders(test_user.id)
+    yield
+```
+
+### Rule E2E-005: Handling Flakiness
+
+E2E tests are prone to flakiness. Apply these strategies:
+
+```python
+# Explicit waits instead of sleeps
+def test_add_to_cart(browser, product_page):
+    product_page.add_to_cart()
+    
+    # BAD: Arbitrary sleep
+    # time.sleep(2)
+    
+    # GOOD: Wait for specific condition
+    browser.wait_for_selector("text=Added to cart", timeout=5000)
+
+# Retry flaky external interactions
+@pytest.mark.flaky(reruns=2, reruns_delay=1)
+def test_payment_processing(browser, checkout_page):
+    """Payment provider may occasionally be slow."""
+    checkout_page.fill_payment(test_card)
+    checkout_page.place_order()
+    
+    # Extended timeout for external service
+    browser.wait_for_selector("text=Order Confirmed", timeout=30000)
+
+# Isolate tests completely
+@pytest.fixture
+def isolated_browser(browser_factory):
+    """Each test gets fresh browser state."""
+    browser = browser_factory.new_context()
+    yield browser
+    browser.close()
+```
+
+## Contract Testing
+
+### Rule E2E-006: Contract Test Purpose
+
+Contract tests verify that service interfaces match agreed specifications without requiring all services to run together:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Contract Testing Model                        │
+│                                                                  │
+│   Consumer Service                    Provider Service           │
+│   ┌──────────────┐                   ┌──────────────┐           │
+│   │              │                   │              │           │
+│   │  Uses API    │                   │  Exposes API │           │
+│   │              │                   │              │           │
+│   └──────┬───────┘                   └───────┬──────┘           │
+│          │                                   │                   │
+│          │         ┌─────────────┐           │                   │
+│          └────────►│  Contract   │◄──────────┘                   │
+│                    │  (Pact/OAS) │                               │
+│                    └─────────────┘                               │
+│                                                                  │
+│   Consumer tests against contract (mocked provider)              │
+│   Provider tests verify contract compliance                      │
+│   Neither needs the other to run                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Rule E2E-007: Consumer-Driven Contracts
+
+Consumers define contracts based on what they actually use:
+
+```python
+# tests/contracts/test_user_service_consumer.py
+import pact
+
+class TestUserServiceConsumer:
+    """Consumer contract tests for User Service."""
+    
+    @pytest.fixture
+    def pact(self):
+        pact = Pact(
+            consumer="OrderService",
+            provider="UserService",
+            pact_dir="./pacts"
+        )
+        pact.start_service()
+        yield pact
+        pact.stop_service()
+    
+    def test_can_fetch_user_by_id(self, pact):
+        # Define expected interaction
+        (pact
+            .given("a user with ID 123 exists")
+            .upon_receiving("a request for user 123")
+            .with_request(
+                method="GET",
+                path="/api/v1/users/123",
+                headers={"Accept": "application/json"}
+            )
+            .will_respond_with(
+                status=200,
+                headers={"Content-Type": "application/json"},
+                body={
+                    "id": "123",
+                    "email": pact.Like("user@example.com"),
+                    "name": pact.Like("John Doe"),
+                    "created_at": pact.Term(
+                        generate="2024-01-15T10:30:00Z",
+                        matcher=r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"
+                    )
+                }
+            )
+        )
+        
+        with pact:
+            # Make actual request to mock
+            client = UserServiceClient(base_url=pact.uri)
+            user = client.get_user("123")
+            
+            # Verify client handles response correctly
+            assert user.id == "123"
+            assert user.email is not None
+    
+    def test_handles_user_not_found(self, pact):
+        (pact
+            .given("no user with ID 999 exists")
+            .upon_receiving("a request for nonexistent user")
+            .with_request(method="GET", path="/api/v1/users/999")
+            .will_respond_with(
+                status=404,
+                body={"error": {"code": "NOT_FOUND"}}
+            )
+        )
+        
+        with pact:
+            client = UserServiceClient(base_url=pact.uri)
+            with pytest.raises(UserNotFoundError):
+                client.get_user("999")
+```
+
+### Rule E2E-008: Provider Verification
+
+Providers verify they meet consumer expectations:
+
+```python
+# tests/contracts/test_user_service_provider.py
+
+class TestUserServiceProvider:
+    """Provider contract verification."""
+    
+    @pytest.fixture
+    def provider_states(self, db_session, user_factory):
+        """Set up database state for each provider state."""
+        return {
+            "a user with ID 123 exists": lambda: user_factory.create(
+                id="123",
+                email="user@example.com",
+                name="John Doe"
+            ),
+            "no user with ID 999 exists": lambda: None,
+        }
+    
+    def test_verify_pacts(self, provider_states):
+        verifier = Verifier(
+            provider="UserService",
+            provider_base_url="http://localhost:8000"
+        )
+        
+        # Verify all consumer contracts
+        success, logs = verifier.verify_pacts(
+            pact_urls=[
+                "./pacts/orderservice-userservice.json",
+                "./pacts/billingservice-userservice.json",
+            ],
+            provider_states_setup_url="http://localhost:8000/_pact/setup",
+        )
+        
+        assert success, f"Contract verification failed: {logs}"
+```
+
+### Rule E2E-009: API Schema Contracts
+
+For REST APIs, use OpenAPI schemas as contracts:
+
+```python
+# tests/contracts/test_api_schema_compliance.py
+from openapi_core import OpenAPI
+from openapi_core.testing import MockRequest, MockResponse
+
+class TestAPISchemaCompliance:
+    """Verify API responses match OpenAPI schema."""
+    
+    @pytest.fixture
+    def openapi(self):
+        return OpenAPI.from_file("docs/openapi.yaml")
+    
+    def test_create_user_response_matches_schema(self, openapi, client):
+        response = client.post("/api/v1/users", json={
+            "email": "test@example.com",
+            "password": "SecurePass123!",
+            "name": "Test User"
+        })
+        
+        # Validate response against schema
+        mock_request = MockRequest("http://localhost", "POST", "/api/v1/users")
+        mock_response = MockResponse(response.content, response.status_code)
+        
+        result = openapi.validate_response(mock_request, mock_response)
+        
+        assert not result.errors, f"Schema violations: {result.errors}"
+    
+    def test_list_users_response_matches_schema(self, openapi, client):
+        response = client.get("/api/v1/users")
+        
+        mock_request = MockRequest("http://localhost", "GET", "/api/v1/users")
+        mock_response = MockResponse(response.content, response.status_code)
+        
+        result = openapi.validate_response(mock_request, mock_response)
+        
+        assert not result.errors
+```
+
+### Rule E2E-010: Event Contract Testing
+
+For async systems, test event contracts:
+
+```python
+# tests/contracts/test_event_contracts.py
+
+class TestOrderEventContracts:
+    """Contract tests for order domain events."""
+    
+    @pytest.fixture
+    def event_schema(self):
+        return json.load(open("contracts/events/order-created.json"))
+    
+    def test_order_created_event_matches_schema(self, event_schema):
+        # Generate event as the producer would
+        order = Order(
+            id="order-123",
+            customer_id="cust-456",
+            items=[OrderItem(product_id="prod-789", quantity=2)],
+            total=Decimal("99.99")
+        )
+        
+        event = OrderCreatedEvent.from_order(order)
+        event_json = event.to_json()
+        
+        # Validate against schema
+        validate(instance=json.loads(event_json), schema=event_schema)
+    
+    def test_consumer_can_parse_order_created_event(self, event_schema):
+        # Sample event matching schema
+        event_payload = {
+            "event_id": "evt-123",
+            "event_type": "order.created",
+            "timestamp": "2024-01-15T10:30:00Z",
+            "data": {
+                "order_id": "order-123",
+                "customer_id": "cust-456",
+                "total": "99.99",
+                "currency": "USD"
+            }
+        }
+        
+        # Verify schema compliance
+        validate(instance=event_payload, schema=event_schema)
+        
+        # Verify consumer can handle it
+        handler = OrderCreatedHandler()
+        result = handler.parse_event(json.dumps(event_payload))
+        
+        assert result.order_id == "order-123"
+```
+
+## Performance Testing Integration
+
+### Rule E2E-011: Basic Performance Assertions
+
+Include basic performance checks in E2E tests:
+
+```python
+@pytest.mark.e2e
+def test_homepage_load_time(browser):
+    """Homepage should load within acceptable time."""
+    start = time.time()
+    browser.goto("/")
+    browser.wait_for_selector("[data-testid='main-content']")
+    load_time = time.time() - start
+    
+    assert load_time < 3.0, f"Homepage took {load_time:.2f}s to load"
+
+@pytest.mark.e2e
+def test_search_response_time(browser, product_page):
+    """Search should return results quickly."""
+    start = time.time()
+    product_page.search("widget")
+    browser.wait_for_selector("[data-testid='search-results']")
+    response_time = time.time() - start
+    
+    assert response_time < 2.0, f"Search took {response_time:.2f}s"
+```
+
+## CI/CD Configuration
+
+### Rule E2E-012: E2E Test Execution
+
+Configure E2E tests for CI/CD:
+
+```yaml
+# .github/workflows/e2e.yml
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 */4 * * *'  # Run every 4 hours
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Start application stack
+        run: docker-compose -f docker-compose.e2e.yml up -d
+      
+      - name: Wait for services
+        run: ./scripts/wait-for-services.sh
+      
+      - name: Seed test data
+        run: ./scripts/seed-e2e-data.sh
+      
+      - name: Install Playwright
+        run: npx playwright install --with-deps
+      
+      - name: Run E2E tests
+        run: pytest tests/e2e -v --html=report.html
+      
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            test-results/
+            report.html
+            screenshots/
+      
+      - name: Notify on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          channel-id: 'C123456'
+          slack-message: 'E2E tests failed! <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>'
+```
+
+### Rule E2E-013: Contract Test in Pipeline
+
+Run contract tests as part of CI:
+
+```yaml
+# Provider pipeline
+contract-verification:
+  runs-on: ubuntu-latest
+  steps:
+    - name: Verify consumer contracts
+      run: |
+        # Fetch latest contracts from Pact Broker
+        pact-broker fetch-pacts \
+          --broker-base-url $PACT_BROKER_URL \
+          --provider UserService \
+          --output-dir ./pacts
+        
+        # Verify contracts
+        pytest tests/contracts/provider/ -v
+    
+    - name: Publish verification results
+      run: |
+        pact-broker publish-verification-results \
+          --provider-version ${{ github.sha }} \
+          --success
+
+# Consumer pipeline
+publish-contracts:
+  runs-on: ubuntu-latest
+  steps:
+    - name: Run consumer contract tests
+      run: pytest tests/contracts/consumer/ -v
+    
+    - name: Publish contracts to broker
+      run: |
+        pact-broker publish ./pacts \
+          --consumer-version ${{ github.sha }} \
+          --broker-base-url $PACT_BROKER_URL
+```

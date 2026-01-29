@@ -1,0 +1,739 @@
+---
+description: Rules for integration testing with real dependencies
+globs: ["**/integration/**", "**/*.integration.test.*", "**/test_*_integration.py"]
+alwaysApply: false
+priority: 2
+---
+
+# Integration Testing Rules
+
+## Purpose
+
+Integration tests verify that components work correctly together with real dependencies. Unlike unit tests which mock everything, integration tests use actual databases, message queues, and other infrastructure to catch issues that only appear when systems interact.
+
+> **AI Instruction**: Integration tests are more expensive to write and run than unit tests. Before writing an integration test, verify that the behavior cannot be adequately tested at the unit level. Integration tests should focus on the integration itself, not on business logic that unit tests already cover.
+
+## Scope and Boundaries
+
+### Rule INT-001: Integration Test Scope
+
+Integration tests verify the correct functioning of integration points:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    Integration Test Scope                       │
+│                                                                 │
+│   ┌─────────────┐    Integration     ┌─────────────────────┐  │
+│   │   Your      │◄──────────────────►│  Real Dependency    │  │
+│   │   Code      │      Point         │  (DB, Queue, API)   │  │
+│   └─────────────┘                    └─────────────────────┘  │
+│                                                                 │
+│   What to Test:                                                │
+│   • Connection handling                                         │
+│   • Data serialization/deserialization                         │
+│   • Error handling from real failures                          │
+│   • Transaction behavior                                        │
+│   • Concurrency issues                                          │
+│   • Protocol compliance                                         │
+│                                                                 │
+│   What NOT to Test:                                            │
+│   • Business logic (use unit tests)                            │
+│   • UI behavior (use E2E tests)                                │
+│   • Third-party library internals                              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Rule INT-002: Dependency Classification
+
+Identify which dependencies require integration testing:
+
+| Dependency Type | Integration Test Required | Example |
+|-----------------|--------------------------|---------|
+| Database | Yes | PostgreSQL, MongoDB |
+| Message Queue | Yes | Kafka, RabbitMQ |
+| Cache | Yes | Redis, Memcached |
+| External HTTP API | Conditional* | Payment provider, Email service |
+| File System | Sometimes | File processing, uploads |
+| Internal Service | Yes (if separate process) | Microservice communication |
+
+*External APIs may use contract tests or sandboxes instead of integration tests.
+
+## Database Integration Testing
+
+### Rule INT-003: Repository Testing
+
+Test repository implementations against real databases:
+
+```python
+@pytest.mark.integration
+class TestPostgresUserRepository:
+    """Integration tests for PostgreSQL user repository."""
+    
+    @pytest.fixture(autouse=True)
+    def setup_database(self, db_session):
+        """Clean database state before each test."""
+        db_session.execute(text("TRUNCATE users CASCADE"))
+        db_session.commit()
+        yield
+        db_session.rollback()
+    
+    def test_saves_and_retrieves_user(self, repository, db_session):
+        # Arrange
+        user = User(
+            email="test@example.com",
+            name="Test User",
+            created_at=datetime.utcnow()
+        )
+        
+        # Act
+        repository.save(user)
+        db_session.commit()
+        
+        retrieved = repository.find_by_email("test@example.com")
+        
+        # Assert
+        assert retrieved is not None
+        assert retrieved.email == user.email
+        assert retrieved.name == user.name
+        assert retrieved.id is not None  # ID assigned by database
+    
+    def test_find_returns_none_for_nonexistent_user(self, repository):
+        result = repository.find_by_email("nonexistent@example.com")
+        assert result is None
+    
+    def test_unique_email_constraint_enforced(self, repository, db_session):
+        user1 = User(email="duplicate@example.com", name="User 1")
+        user2 = User(email="duplicate@example.com", name="User 2")
+        
+        repository.save(user1)
+        db_session.commit()
+        
+        with pytest.raises(DuplicateEmailError):
+            repository.save(user2)
+            db_session.commit()
+    
+    def test_concurrent_updates_handled_with_optimistic_locking(
+        self, repository, db_session
+    ):
+        """Verify optimistic locking prevents lost updates."""
+        # Create user
+        user = User(email="test@example.com", name="Original")
+        repository.save(user)
+        db_session.commit()
+        
+        # Simulate concurrent read
+        user_v1 = repository.find_by_id(user.id)
+        user_v2 = repository.find_by_id(user.id)
+        
+        # First update succeeds
+        user_v1.name = "Updated by V1"
+        repository.save(user_v1)
+        db_session.commit()
+        
+        # Second update should fail (stale version)
+        user_v2.name = "Updated by V2"
+        with pytest.raises(StaleDataError):
+            repository.save(user_v2)
+            db_session.commit()
+```
+
+### Rule INT-004: Transaction Testing
+
+Test transaction boundaries explicitly:
+
+```python
+@pytest.mark.integration
+class TestOrderTransactions:
+    """Tests for order transaction boundaries."""
+    
+    def test_order_creation_is_atomic(self, db_session, order_repository, inventory_service):
+        """All-or-nothing: either full order is saved or nothing."""
+        order = Order(items=[
+            OrderItem(product_id="prod-1", quantity=1),
+            OrderItem(product_id="prod-2", quantity=1),
+        ])
+        
+        # Simulate failure on second item
+        inventory_service.reserve = Mock(
+            side_effect=[None, InsufficientStockError()]
+        )
+        
+        with pytest.raises(InsufficientStockError):
+            order_repository.save(order)
+        
+        db_session.rollback()
+        
+        # Verify nothing was saved
+        assert order_repository.find_by_id(order.id) is None
+        # First item's reservation should also be rolled back
+    
+    def test_read_committed_isolation(self, db_session_factory):
+        """Verify read committed isolation behavior."""
+        session1 = db_session_factory()
+        session2 = db_session_factory()
+        
+        try:
+            # Session 1 creates order
+            order = Order(status="pending")
+            session1.add(order)
+            session1.flush()  # Assign ID, don't commit
+            
+            # Session 2 cannot see uncommitted data
+            result = session2.query(Order).filter_by(id=order.id).first()
+            assert result is None
+            
+            # After commit, session 2 sees the data
+            session1.commit()
+            result = session2.query(Order).filter_by(id=order.id).first()
+            assert result is not None
+        finally:
+            session1.close()
+            session2.close()
+```
+
+### Rule INT-005: Query Testing
+
+Test complex queries against real data:
+
+```python
+@pytest.mark.integration
+class TestOrderQueries:
+    """Tests for complex order queries."""
+    
+    @pytest.fixture
+    def sample_orders(self, db_session, order_factory):
+        """Create diverse sample data for query testing."""
+        orders = [
+            order_factory.create(
+                customer_id="cust-1",
+                status="completed",
+                total=Decimal("100.00"),
+                created_at=datetime(2024, 1, 15)
+            ),
+            order_factory.create(
+                customer_id="cust-1",
+                status="pending",
+                total=Decimal("50.00"),
+                created_at=datetime(2024, 1, 20)
+            ),
+            order_factory.create(
+                customer_id="cust-2",
+                status="completed",
+                total=Decimal("200.00"),
+                created_at=datetime(2024, 1, 10)
+            ),
+        ]
+        db_session.commit()
+        return orders
+    
+    def test_find_orders_by_customer(self, repository, sample_orders):
+        results = repository.find_by_customer("cust-1")
+        
+        assert len(results) == 2
+        assert all(o.customer_id == "cust-1" for o in results)
+    
+    def test_find_orders_with_date_range(self, repository, sample_orders):
+        results = repository.find_by_date_range(
+            start=datetime(2024, 1, 12),
+            end=datetime(2024, 1, 18)
+        )
+        
+        assert len(results) == 1
+        assert results[0].created_at == datetime(2024, 1, 15)
+    
+    def test_aggregate_revenue_by_customer(self, repository, sample_orders):
+        results = repository.get_customer_revenue_summary()
+        
+        assert results["cust-1"] == Decimal("150.00")  # 100 + 50
+        assert results["cust-2"] == Decimal("200.00")
+    
+    def test_pagination_with_sorting(self, repository, sample_orders):
+        page1 = repository.find_all(page=1, per_page=2, sort_by="created_at")
+        page2 = repository.find_all(page=2, per_page=2, sort_by="created_at")
+        
+        assert len(page1) == 2
+        assert len(page2) == 1
+        # Verify ordering
+        assert page1[0].created_at < page1[1].created_at
+```
+
+## Message Queue Integration Testing
+
+### Rule INT-006: Producer Testing
+
+Test message production with real queues:
+
+```python
+@pytest.mark.integration
+class TestKafkaOrderProducer:
+    """Integration tests for Kafka order event producer."""
+    
+    @pytest.fixture
+    def kafka_consumer(self, kafka_admin):
+        """Create test consumer for verification."""
+        consumer = KafkaConsumer(
+            "orders.events",
+            bootstrap_servers=TEST_KAFKA_SERVERS,
+            auto_offset_reset="latest",
+            consumer_timeout_ms=5000
+        )
+        yield consumer
+        consumer.close()
+    
+    def test_publishes_order_created_event(self, producer, kafka_consumer):
+        # Arrange
+        event = OrderCreatedEvent(
+            order_id="order-123",
+            customer_id="cust-456",
+            total=Decimal("99.99")
+        )
+        
+        # Act
+        producer.publish(event)
+        producer.flush()  # Ensure message is sent
+        
+        # Assert: Consume and verify
+        messages = list(kafka_consumer)
+        assert len(messages) >= 1
+        
+        message = messages[-1]
+        payload = json.loads(message.value)
+        assert payload["order_id"] == "order-123"
+        assert payload["event_type"] == "order.created"
+    
+    def test_message_includes_required_headers(self, producer, kafka_consumer):
+        event = OrderCreatedEvent(order_id="order-123")
+        
+        producer.publish(event)
+        producer.flush()
+        
+        message = list(kafka_consumer)[-1]
+        headers = dict(message.headers)
+        
+        assert "correlation_id" in headers
+        assert "timestamp" in headers
+        assert "schema_version" in headers
+```
+
+### Rule INT-007: Consumer Testing
+
+Test message consumption and processing:
+
+```python
+@pytest.mark.integration
+class TestPaymentEventConsumer:
+    """Integration tests for payment event consumer."""
+    
+    @pytest.fixture
+    def kafka_producer(self):
+        """Producer for publishing test events."""
+        producer = KafkaProducer(
+            bootstrap_servers=TEST_KAFKA_SERVERS,
+            value_serializer=lambda v: json.dumps(v).encode()
+        )
+        yield producer
+        producer.close()
+    
+    def test_processes_payment_completed_event(
+        self, consumer, kafka_producer, order_repository
+    ):
+        # Arrange: Create order waiting for payment
+        order = Order(id="order-123", status="pending_payment")
+        order_repository.save(order)
+        
+        # Act: Publish payment event
+        kafka_producer.send("payments.events", {
+            "event_type": "payment.completed",
+            "order_id": "order-123",
+            "amount": "99.99"
+        })
+        kafka_producer.flush()
+        
+        # Allow consumer to process
+        consumer.poll(timeout=5.0)
+        
+        # Assert
+        updated_order = order_repository.find_by_id("order-123")
+        assert updated_order.status == "paid"
+    
+    def test_handles_duplicate_events_idempotently(
+        self, consumer, kafka_producer, order_repository
+    ):
+        """Verify idempotent processing of duplicate events."""
+        order = Order(id="order-123", status="pending_payment")
+        order_repository.save(order)
+        
+        event = {
+            "event_id": "evt-unique-123",  # Same event ID
+            "event_type": "payment.completed",
+            "order_id": "order-123"
+        }
+        
+        # Send same event twice
+        kafka_producer.send("payments.events", event)
+        kafka_producer.send("payments.events", event)
+        kafka_producer.flush()
+        
+        consumer.poll(timeout=5.0)
+        consumer.poll(timeout=5.0)
+        
+        # Should only process once
+        order = order_repository.find_by_id("order-123")
+        assert order.status == "paid"
+        # Verify no duplicate side effects
+```
+
+## HTTP API Integration Testing
+
+### Rule INT-008: API Endpoint Testing
+
+Test API endpoints with real HTTP stack:
+
+```python
+@pytest.mark.integration
+class TestUserAPI:
+    """Integration tests for User API endpoints."""
+    
+    @pytest.fixture
+    def client(self, app):
+        """Test client with real HTTP handling."""
+        return TestClient(app)
+    
+    @pytest.fixture(autouse=True)
+    def clean_database(self, db_session):
+        db_session.execute(text("TRUNCATE users CASCADE"))
+        db_session.commit()
+    
+    def test_create_user_returns_201(self, client):
+        response = client.post("/api/v1/users", json={
+            "email": "test@example.com",
+            "password": "SecurePass123!",
+            "name": "Test User"
+        })
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["email"] == "test@example.com"
+        assert data["id"] is not None
+        assert "password" not in data  # Should not expose password
+    
+    def test_create_user_returns_400_for_invalid_email(self, client):
+        response = client.post("/api/v1/users", json={
+            "email": "not-an-email",
+            "password": "SecurePass123!",
+            "name": "Test User"
+        })
+        
+        assert response.status_code == 400
+        error = response.json()["error"]
+        assert error["code"] == "VALIDATION_ERROR"
+        assert any(d["field"] == "email" for d in error["details"])
+    
+    def test_create_user_returns_409_for_duplicate_email(self, client, user_factory):
+        # Create existing user
+        user_factory.create(email="existing@example.com")
+        
+        response = client.post("/api/v1/users", json={
+            "email": "existing@example.com",
+            "password": "SecurePass123!",
+            "name": "Duplicate User"
+        })
+        
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "EMAIL_EXISTS"
+    
+    def test_get_user_returns_404_for_nonexistent(self, client):
+        response = client.get("/api/v1/users/nonexistent-id")
+        
+        assert response.status_code == 404
+    
+    def test_authentication_required_for_protected_endpoint(self, client):
+        response = client.get("/api/v1/users/me")
+        
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
+    
+    def test_authenticated_user_can_access_protected_endpoint(
+        self, client, auth_token
+    ):
+        response = client.get(
+            "/api/v1/users/me",
+            headers={"Authorization": f"Bearer {auth_token}"}
+        )
+        
+        assert response.status_code == 200
+```
+
+### Rule INT-009: API Error Response Testing
+
+Verify consistent error handling:
+
+```python
+@pytest.mark.integration
+class TestAPIErrorHandling:
+    """Tests for API error response consistency."""
+    
+    def test_validation_errors_include_field_details(self, client):
+        response = client.post("/api/v1/orders", json={
+            "items": [],  # Invalid: empty
+            "shipping_address": None  # Invalid: required
+        })
+        
+        assert response.status_code == 400
+        error = response.json()["error"]
+        
+        # Verify error structure
+        assert "code" in error
+        assert "message" in error
+        assert "details" in error
+        
+        # Verify field-level details
+        fields_with_errors = {d["field"] for d in error["details"]}
+        assert "items" in fields_with_errors
+        assert "shipping_address" in fields_with_errors
+    
+    def test_internal_errors_dont_expose_stack_trace(self, client, monkeypatch):
+        # Force an internal error
+        def raise_error(*args):
+            raise RuntimeError("Database connection failed")
+        
+        monkeypatch.setattr(UserRepository, "find_by_id", raise_error)
+        
+        response = client.get("/api/v1/users/123")
+        
+        assert response.status_code == 500
+        error = response.json()["error"]
+        assert error["code"] == "INTERNAL_ERROR"
+        assert "Database" not in error["message"]  # No implementation details
+        assert "traceback" not in response.text.lower()
+```
+
+## External Service Integration
+
+### Rule INT-010: Third-Party API Testing Strategy
+
+For external APIs, prefer contract tests or sandboxes over direct integration:
+
+```python
+@pytest.mark.integration
+@pytest.mark.external  # Mark for conditional execution
+class TestStripeIntegration:
+    """Integration tests against Stripe test environment."""
+    
+    @pytest.fixture
+    def stripe_client(self):
+        """Stripe client configured for test mode."""
+        stripe.api_key = os.environ["STRIPE_TEST_API_KEY"]
+        return stripe
+    
+    def test_creates_payment_intent(self, stripe_client, payment_adapter):
+        result = payment_adapter.create_payment(
+            amount=Money(Decimal("10.00"), "USD"),
+            customer_email="test@example.com"
+        )
+        
+        assert result.is_success
+        assert result.payment_id.startswith("pi_")  # Stripe payment intent ID
+    
+    def test_handles_card_declined(self, payment_adapter):
+        # Stripe test card number that always declines
+        result = payment_adapter.process_card(
+            card_token="tok_chargeDeclined",
+            amount=Money(Decimal("10.00"), "USD")
+        )
+        
+        assert result.is_failure
+        assert result.error_code == "card_declined"
+    
+    def test_handles_network_timeout(self, payment_adapter, monkeypatch):
+        # Simulate timeout
+        def timeout_request(*args, **kwargs):
+            raise requests.Timeout("Connection timed out")
+        
+        monkeypatch.setattr(requests, "post", timeout_request)
+        
+        result = payment_adapter.create_payment(
+            amount=Money(Decimal("10.00"), "USD")
+        )
+        
+        assert result.is_failure
+        assert result.error_code == "service_unavailable"
+        assert result.is_retryable
+```
+
+## Test Data Management
+
+### Rule INT-011: Database Seeding
+
+Use controlled seeding for integration tests:
+
+```python
+# tests/integration/conftest.py
+
+@pytest.fixture(scope="session")
+def database_schema(engine):
+    """Create schema once per session."""
+    Base.metadata.create_all(engine)
+    yield
+    Base.metadata.drop_all(engine)
+
+@pytest.fixture(scope="function")
+def db_session(database_schema, engine):
+    """Transaction-scoped session that rolls back after each test."""
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
+    
+    yield session
+    
+    session.close()
+    transaction.rollback()
+    connection.close()
+
+@pytest.fixture
+def seed_reference_data(db_session):
+    """Seed reference data needed by most tests."""
+    # Countries, currencies, product categories, etc.
+    db_session.execute(text("""
+        INSERT INTO countries (code, name) VALUES
+        ('US', 'United States'),
+        ('CA', 'Canada'),
+        ('GB', 'United Kingdom')
+        ON CONFLICT DO NOTHING
+    """))
+    db_session.commit()
+```
+
+### Rule INT-012: Test Isolation
+
+Ensure tests don't interfere with each other:
+
+```python
+@pytest.fixture
+def isolated_queue(kafka_admin):
+    """Create isolated queue for test."""
+    topic_name = f"test-{uuid.uuid4()}"
+    kafka_admin.create_topics([NewTopic(topic_name, 1, 1)])
+    
+    yield topic_name
+    
+    kafka_admin.delete_topics([topic_name])
+
+@pytest.fixture
+def isolated_redis_namespace(redis_client):
+    """Namespace Redis keys for test isolation."""
+    namespace = f"test:{uuid.uuid4()}:"
+    
+    class NamespacedClient:
+        def get(self, key):
+            return redis_client.get(f"{namespace}{key}")
+        
+        def set(self, key, value, **kwargs):
+            return redis_client.set(f"{namespace}{key}", value, **kwargs)
+    
+    yield NamespacedClient()
+    
+    # Cleanup: delete all keys with this namespace
+    for key in redis_client.scan_iter(f"{namespace}*"):
+        redis_client.delete(key)
+```
+
+## Performance Considerations
+
+### Rule INT-013: Integration Test Speed
+
+Integration tests are slower than unit tests. Optimize where possible:
+
+```python
+# Use session-scoped fixtures for expensive setup
+@pytest.fixture(scope="session")
+def docker_services():
+    """Start Docker services once per session."""
+    subprocess.run(["docker-compose", "-f", "docker-compose.test.yml", "up", "-d"])
+    wait_for_services()
+    yield
+    subprocess.run(["docker-compose", "-f", "docker-compose.test.yml", "down"])
+
+# Reuse connections
+@pytest.fixture(scope="session")
+def db_engine():
+    """Single engine per session."""
+    engine = create_engine(TEST_DATABASE_URL, pool_size=5)
+    yield engine
+    engine.dispose()
+
+# Batch related tests
+@pytest.mark.integration
+class TestOrderLifecycle:
+    """Tests that share setup can run together."""
+    
+    @pytest.fixture(autouse=True)
+    def setup_order(self, db_session, order_factory):
+        self.order = order_factory.create(status="pending")
+        db_session.commit()
+    
+    def test_can_approve_pending_order(self): ...
+    def test_can_cancel_pending_order(self): ...
+    def test_cannot_ship_pending_order(self): ...
+```
+
+### Rule INT-014: Parallel Execution
+
+Design tests to run in parallel:
+
+```python
+# pytest.ini
+[pytest]
+addopts = -n auto  # Parallel execution
+
+# Tests must be independent
+# BAD: Shared state
+GLOBAL_COUNTER = 0
+
+def test_increment():
+    global GLOBAL_COUNTER
+    GLOBAL_COUNTER += 1
+    assert GLOBAL_COUNTER == 1  # Fails if another test ran first
+
+# GOOD: Isolated state
+def test_increment(isolated_counter):
+    isolated_counter.increment()
+    assert isolated_counter.value == 1
+```
+
+## CI/CD Integration
+
+### Rule INT-015: Integration Test Configuration
+
+Configure integration tests for CI/CD:
+
+```yaml
+# .github/workflows/test.yml
+integration-tests:
+  runs-on: ubuntu-latest
+  services:
+    postgres:
+      image: postgres:15
+      env:
+        POSTGRES_PASSWORD: test
+      options: >-
+        --health-cmd pg_isready
+        --health-interval 10s
+        --health-timeout 5s
+        --health-retries 5
+    
+    redis:
+      image: redis:7
+      options: >-
+        --health-cmd "redis-cli ping"
+  
+  steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run integration tests
+      env:
+        DATABASE_URL: postgresql://postgres:test@localhost/test
+        REDIS_URL: redis://localhost:6379
+      run: |
+        pytest tests/integration -v --tb=short
+```

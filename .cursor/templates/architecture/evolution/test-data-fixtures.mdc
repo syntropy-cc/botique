@@ -1,0 +1,795 @@
+---
+description: Rules for test data management, factories, and fixtures
+globs: ["**/conftest.py", "**/factories.py", "**/fixtures/**"]
+alwaysApply: false
+priority: 3
+---
+
+# Test Data and Fixtures Rules
+
+## Purpose
+
+Well-managed test data is the foundation of reliable tests. This file defines standards for creating, organizing, and maintaining test data through factories, fixtures, and builders. Proper test data management reduces test brittleness and improves maintainability.
+
+> **AI Instruction**: When writing tests that need data, prefer factories over manual object construction. When creating fixtures, follow the patterns in this file. Never hardcode test data that could change or that obscures the test's intent.
+
+## Factory Pattern
+
+### Rule DATA-001: Factory Structure
+
+Factories centralize object creation logic and provide sensible defaults:
+
+```python
+# tests/factories/user_factory.py
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+import uuid
+
+@dataclass
+class UserFactory:
+    """
+    Factory for creating User test objects.
+    
+    Usage:
+        # Create with defaults
+        user = UserFactory.create()
+        
+        # Create with overrides
+        user = UserFactory.create(email="custom@example.com")
+        
+        # Create without persisting
+        user = UserFactory.build()
+        
+        # Create multiple
+        users = UserFactory.create_batch(5)
+    """
+    
+    # Default values - override as needed
+    email: str = None
+    name: str = "Test User"
+    password_hash: str = "hashed_password_placeholder"
+    is_active: bool = True
+    created_at: datetime = None
+    
+    @classmethod
+    def build(cls, **overrides) -> "User":
+        """
+        Build a User instance without persisting.
+        Use for unit tests that don't need database.
+        """
+        data = {
+            "email": overrides.get("email") or f"user-{uuid.uuid4()}@example.com",
+            "name": overrides.get("name", cls.name),
+            "password_hash": overrides.get("password_hash", cls.password_hash),
+            "is_active": overrides.get("is_active", cls.is_active),
+            "created_at": overrides.get("created_at") or datetime.utcnow(),
+        }
+        data.update(overrides)
+        return User(**data)
+    
+    @classmethod
+    def create(cls, session=None, **overrides) -> "User":
+        """
+        Create and persist a User instance.
+        Use for integration tests that need database state.
+        """
+        user = cls.build(**overrides)
+        if session:
+            session.add(user)
+            session.flush()  # Get ID without committing
+        return user
+    
+    @classmethod
+    def create_batch(cls, count: int, session=None, **overrides) -> list["User"]:
+        """Create multiple users with unique emails."""
+        return [cls.create(session=session, **overrides) for _ in range(count)]
+
+
+# Related factories for complex object graphs
+@dataclass
+class OrderFactory:
+    """Factory for Order with associated items."""
+    
+    customer: "User" = None
+    status: str = "pending"
+    items: list = None
+    
+    @classmethod
+    def build(cls, **overrides) -> "Order":
+        # Create customer if not provided
+        customer = overrides.pop("customer", None) or UserFactory.build()
+        
+        # Create default items if not provided
+        items = overrides.pop("items", None)
+        if items is None:
+            items = [OrderItemFactory.build() for _ in range(2)]
+        
+        return Order(
+            customer_id=customer.id or str(uuid.uuid4()),
+            status=overrides.get("status", cls.status),
+            items=items,
+            **overrides
+        )
+    
+    @classmethod
+    def create(cls, session=None, **overrides) -> "Order":
+        # Ensure customer exists
+        customer = overrides.get("customer")
+        if not customer:
+            customer = UserFactory.create(session=session)
+            overrides["customer"] = customer
+        
+        order = cls.build(**overrides)
+        if session:
+            session.add(order)
+            session.flush()
+        return order
+```
+
+### Rule DATA-002: Factory Traits
+
+Use traits for common variations:
+
+```python
+class UserFactory:
+    """Factory with traits for common user variations."""
+    
+    # Base factory methods...
+    
+    @classmethod
+    def admin(cls, **overrides) -> "User":
+        """Create an admin user."""
+        return cls.build(
+            role="admin",
+            permissions=["read", "write", "delete", "admin"],
+            **overrides
+        )
+    
+    @classmethod
+    def premium(cls, **overrides) -> "User":
+        """Create a premium subscriber."""
+        return cls.build(
+            subscription_tier="premium",
+            subscription_expires=datetime.utcnow() + timedelta(days=365),
+            **overrides
+        )
+    
+    @classmethod
+    def inactive(cls, **overrides) -> "User":
+        """Create an inactive user."""
+        return cls.build(
+            is_active=False,
+            deactivated_at=datetime.utcnow(),
+            **overrides
+        )
+    
+    @classmethod
+    def with_orders(cls, order_count: int = 3, session=None, **overrides) -> "User":
+        """Create user with order history."""
+        user = cls.create(session=session, **overrides)
+        for _ in range(order_count):
+            OrderFactory.create(session=session, customer=user)
+        return user
+
+
+# Usage in tests
+def test_admin_can_delete_users(user_factory):
+    admin = user_factory.admin()
+    target = user_factory.build()
+    
+    result = admin.delete_user(target)
+    
+    assert result.is_success
+
+def test_premium_users_get_free_shipping(user_factory):
+    premium_user = user_factory.premium()
+    # Test premium-specific behavior
+```
+
+### Rule DATA-003: Sequence Generation
+
+Use sequences for unique values:
+
+```python
+class SequenceGenerator:
+    """Generate sequential values for unique fields."""
+    
+    _counters: dict = {}
+    
+    @classmethod
+    def next(cls, name: str, pattern: str = "{name}_{n}") -> str:
+        """Generate next value in sequence."""
+        cls._counters[name] = cls._counters.get(name, 0) + 1
+        return pattern.format(name=name, n=cls._counters[name])
+    
+    @classmethod
+    def reset(cls, name: str = None):
+        """Reset counters (call in test teardown)."""
+        if name:
+            cls._counters[name] = 0
+        else:
+            cls._counters.clear()
+
+
+class UserFactory:
+    @classmethod
+    def build(cls, **overrides) -> "User":
+        return User(
+            email=overrides.get("email") or f"{SequenceGenerator.next('user')}@example.com",
+            username=overrides.get("username") or SequenceGenerator.next("username"),
+            # ...
+        )
+
+
+# In conftest.py
+@pytest.fixture(autouse=True)
+def reset_sequences():
+    """Reset sequence generators before each test."""
+    yield
+    SequenceGenerator.reset()
+```
+
+## Pytest Fixtures
+
+### Rule DATA-004: Fixture Organization
+
+Organize fixtures by scope and purpose:
+
+```python
+# tests/conftest.py - Root conftest for shared fixtures
+
+# ============================================================
+# SESSION-SCOPED FIXTURES (expensive setup, run once per session)
+# ============================================================
+
+@pytest.fixture(scope="session")
+def database_engine():
+    """Create database engine once per test session."""
+    engine = create_engine(TEST_DATABASE_URL)
+    
+    # Create schema
+    Base.metadata.create_all(engine)
+    
+    yield engine
+    
+    # Teardown
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def redis_client():
+    """Redis client for the test session."""
+    client = Redis.from_url(TEST_REDIS_URL)
+    yield client
+    client.close()
+
+
+# ============================================================
+# FUNCTION-SCOPED FIXTURES (fresh for each test)
+# ============================================================
+
+@pytest.fixture
+def db_session(database_engine):
+    """Database session with automatic rollback."""
+    connection = database_engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
+    
+    yield session
+    
+    session.close()
+    transaction.rollback()
+    connection.close()
+
+
+@pytest.fixture
+def user_factory(db_session):
+    """User factory bound to test session."""
+    class BoundUserFactory(UserFactory):
+        @classmethod
+        def create(cls, **overrides):
+            return super().create(session=db_session, **overrides)
+    
+    return BoundUserFactory
+
+
+@pytest.fixture
+def authenticated_client(client, user_factory):
+    """API client with authenticated user."""
+    user = user_factory.create()
+    token = create_access_token(user)
+    client.headers["Authorization"] = f"Bearer {token}"
+    client.user = user
+    return client
+
+
+# ============================================================
+# PARAMETERIZED FIXTURES
+# ============================================================
+
+@pytest.fixture(params=["pending", "approved", "shipped", "delivered"])
+def order_in_any_status(request, order_factory):
+    """Parameterized fixture for testing across order statuses."""
+    return order_factory.create(status=request.param)
+```
+
+### Rule DATA-005: Fixture Dependencies
+
+Structure fixture dependencies clearly:
+
+```python
+# Low-level fixtures (infrastructure)
+@pytest.fixture(scope="session")
+def docker_services():
+    """Start required Docker services."""
+    compose = DockerCompose("docker-compose.test.yml")
+    compose.start()
+    compose.wait_for_services()
+    yield compose
+    compose.stop()
+
+
+@pytest.fixture(scope="session")
+def database_engine(docker_services):
+    """Depends on Docker services being available."""
+    return create_engine(TEST_DATABASE_URL)
+
+
+# Mid-level fixtures (data access)
+@pytest.fixture
+def db_session(database_engine):
+    """Depends on engine being available."""
+    # ...
+
+
+@pytest.fixture
+def user_repository(db_session):
+    """Depends on session being available."""
+    return PostgresUserRepository(db_session)
+
+
+# High-level fixtures (application)
+@pytest.fixture
+def user_service(user_repository, event_bus):
+    """Depends on repository and event bus."""
+    return UserService(user_repository, event_bus)
+
+
+# Test uses highest-level fixture needed
+def test_user_creation(user_service):
+    """Test only needs the service, fixtures handle dependencies."""
+    result = user_service.create_user(email="test@example.com")
+    assert result.is_success
+```
+
+### Rule DATA-006: Fixture Cleanup
+
+Always clean up resources properly:
+
+```python
+@pytest.fixture
+def temp_file():
+    """Create temporary file with automatic cleanup."""
+    path = Path(tempfile.mktemp(suffix=".txt"))
+    path.write_text("test content")
+    
+    yield path
+    
+    # Cleanup even if test fails
+    if path.exists():
+        path.unlink()
+
+
+@pytest.fixture
+def mock_external_api():
+    """Mock external API with proper cleanup."""
+    with responses.RequestsMock() as rsps:
+        rsps.add(
+            responses.GET,
+            "https://api.example.com/resource",
+            json={"status": "ok"},
+            status=200
+        )
+        yield rsps
+    # responses context manager handles cleanup
+
+
+@pytest.fixture
+def background_task():
+    """Start background task with guaranteed shutdown."""
+    task = BackgroundTask()
+    task.start()
+    
+    yield task
+    
+    # Ensure cleanup happens
+    task.stop()
+    task.join(timeout=5)
+    if task.is_alive():
+        task.terminate()
+```
+
+## Test Data Patterns
+
+### Rule DATA-007: Builder Pattern for Complex Objects
+
+Use builders for objects with many optional configurations:
+
+```python
+class OrderBuilder:
+    """
+    Builder for creating complex Order test objects.
+    
+    Usage:
+        order = (OrderBuilder()
+            .with_customer(premium_user)
+            .with_items([item1, item2])
+            .with_discount(20)
+            .shipped()
+            .build())
+    """
+    
+    def __init__(self):
+        self._customer = None
+        self._items = []
+        self._status = "pending"
+        self._discount_percent = 0
+        self._shipping_address = None
+        self._notes = None
+        self._created_at = datetime.utcnow()
+    
+    def with_customer(self, customer: "User") -> "OrderBuilder":
+        self._customer = customer
+        return self
+    
+    def with_items(self, items: list["OrderItem"]) -> "OrderBuilder":
+        self._items = items
+        return self
+    
+    def with_item(self, product_id: str, quantity: int = 1, price: Decimal = None) -> "OrderBuilder":
+        self._items.append(OrderItem(
+            product_id=product_id,
+            quantity=quantity,
+            unit_price=price or Decimal("10.00")
+        ))
+        return self
+    
+    def with_discount(self, percent: int) -> "OrderBuilder":
+        self._discount_percent = percent
+        return self
+    
+    def shipped(self) -> "OrderBuilder":
+        self._status = "shipped"
+        return self
+    
+    def delivered(self) -> "OrderBuilder":
+        self._status = "delivered"
+        return self
+    
+    def cancelled(self) -> "OrderBuilder":
+        self._status = "cancelled"
+        return self
+    
+    def placed_days_ago(self, days: int) -> "OrderBuilder":
+        self._created_at = datetime.utcnow() - timedelta(days=days)
+        return self
+    
+    def build(self) -> "Order":
+        if not self._customer:
+            self._customer = UserFactory.build()
+        
+        if not self._items:
+            self._items = [OrderItemFactory.build()]
+        
+        return Order(
+            customer=self._customer,
+            items=self._items,
+            status=self._status,
+            discount_percent=self._discount_percent,
+            created_at=self._created_at
+        )
+
+
+# Usage in tests
+def test_old_orders_can_be_archived():
+    order = (OrderBuilder()
+        .placed_days_ago(90)
+        .delivered()
+        .build())
+    
+    result = archive_service.archive(order)
+    
+    assert result.is_success
+
+def test_cancelled_orders_are_refunded():
+    order = (OrderBuilder()
+        .with_customer(premium_user)
+        .with_item("prod-123", quantity=2, price=Decimal("50.00"))
+        .with_discount(10)
+        .cancelled()
+        .build())
+    
+    refund = refund_service.process(order)
+    
+    assert refund.amount == Decimal("90.00")  # (2 * 50) - 10% discount
+```
+
+### Rule DATA-008: Mother Pattern for Test Data
+
+Use Object Mother for commonly needed test scenarios:
+
+```python
+# tests/mothers/order_mother.py
+
+class OrderMother:
+    """
+    Object Mother providing pre-configured test scenarios.
+    
+    Named after common business scenarios rather than technical states.
+    """
+    
+    @staticmethod
+    def standard_order() -> Order:
+        """A typical order with common items."""
+        return (OrderBuilder()
+            .with_item("widget-standard", quantity=1, price=Decimal("29.99"))
+            .build())
+    
+    @staticmethod
+    def bulk_order() -> Order:
+        """Large order qualifying for bulk discounts."""
+        return (OrderBuilder()
+            .with_item("widget-bulk", quantity=100, price=Decimal("9.99"))
+            .build())
+    
+    @staticmethod
+    def international_order() -> Order:
+        """Order shipping internationally."""
+        return (OrderBuilder()
+            .with_customer(UserMother.international_customer())
+            .with_shipping_address(AddressMother.international())
+            .build())
+    
+    @staticmethod
+    def order_pending_payment() -> Order:
+        """Order waiting for payment confirmation."""
+        return (OrderBuilder()
+            .with_status("pending_payment")
+            .with_payment_intent("pi_test_123")
+            .build())
+    
+    @staticmethod
+    def order_ready_to_ship() -> Order:
+        """Paid order ready for fulfillment."""
+        return (OrderBuilder()
+            .with_status("paid")
+            .with_payment_completed()
+            .build())
+    
+    @staticmethod
+    def problem_order() -> Order:
+        """Order with issues requiring attention."""
+        order = OrderBuilder().build()
+        order.add_flag("ADDRESS_VERIFICATION_FAILED")
+        order.add_flag("POTENTIAL_FRAUD")
+        return order
+
+
+# Usage in tests
+def test_bulk_discount_applied():
+    order = OrderMother.bulk_order()
+    
+    total = pricing_service.calculate(order)
+    
+    assert total < order.subtotal  # Discount was applied
+
+def test_international_orders_require_customs_form():
+    order = OrderMother.international_order()
+    
+    shipment = shipping_service.prepare(order)
+    
+    assert shipment.customs_form is not None
+```
+
+### Rule DATA-009: Avoiding Test Data Coupling
+
+Test data should be explicit about what matters for the test:
+
+```python
+# BAD: Test data obscures what's being tested
+def test_premium_discount():
+    user = User(
+        id=1,
+        email="test@example.com",
+        name="John Doe",
+        subscription_tier="premium",  # This is what matters
+        created_at=datetime(2024, 1, 1),
+        last_login=datetime(2024, 1, 15),
+        address="123 Main St",
+        phone="555-1234"
+    )
+    order = Order(
+        id=100,
+        user_id=1,
+        total=Decimal("100.00"),  # This is what matters
+        status="pending",
+        created_at=datetime(2024, 1, 20)
+    )
+    
+    discount = calculate_discount(user, order)
+    
+    assert discount == Decimal("15.00")
+
+
+# GOOD: Only relevant data is visible
+def test_premium_users_get_15_percent_discount():
+    # Arrange: Only specify what affects the test
+    user = UserFactory.premium()  # subscription_tier="premium"
+    order = OrderFactory.build(total=Decimal("100.00"))
+    
+    # Act
+    discount = calculate_discount(user, order)
+    
+    # Assert
+    assert discount == Decimal("15.00")  # 15% of 100
+
+
+# EVEN BETTER: Use parameterization to show the relationship
+@pytest.mark.parametrize("tier,total,expected_discount", [
+    ("free", Decimal("100.00"), Decimal("0.00")),
+    ("basic", Decimal("100.00"), Decimal("5.00")),  # 5%
+    ("premium", Decimal("100.00"), Decimal("15.00")),  # 15%
+    ("premium", Decimal("200.00"), Decimal("30.00")),  # 15% of 200
+])
+def test_discount_by_tier(user_factory, tier, total, expected_discount):
+    user = user_factory.build(subscription_tier=tier)
+    order = OrderFactory.build(total=total)
+    
+    discount = calculate_discount(user, order)
+    
+    assert discount == expected_discount
+```
+
+### Rule DATA-010: Test Database Seeding
+
+For integration tests, use structured seeding:
+
+```python
+# tests/seeds/reference_data.py
+
+class ReferenceDataSeeder:
+    """Seed reference data needed by most integration tests."""
+    
+    @staticmethod
+    def seed_countries(session):
+        countries = [
+            Country(code="US", name="United States", currency="USD"),
+            Country(code="CA", name="Canada", currency="CAD"),
+            Country(code="GB", name="United Kingdom", currency="GBP"),
+        ]
+        session.add_all(countries)
+    
+    @staticmethod
+    def seed_product_categories(session):
+        categories = [
+            Category(id="cat-electronics", name="Electronics"),
+            Category(id="cat-clothing", name="Clothing"),
+            Category(id="cat-home", name="Home & Garden"),
+        ]
+        session.add_all(categories)
+    
+    @staticmethod
+    def seed_all(session):
+        ReferenceDataSeeder.seed_countries(session)
+        ReferenceDataSeeder.seed_product_categories(session)
+        session.commit()
+
+
+# In conftest.py
+@pytest.fixture(scope="session")
+def seeded_database(database_engine):
+    """Database with reference data."""
+    session = Session(database_engine)
+    ReferenceDataSeeder.seed_all(session)
+    yield database_engine
+    # Reference data persists for session
+
+
+# tests/seeds/scenario_seeders.py
+
+class ScenarioSeeder:
+    """Seed complex scenarios for specific test suites."""
+    
+    @staticmethod
+    def e_commerce_catalog(session):
+        """Seed a realistic product catalog."""
+        products = []
+        for i in range(100):
+            products.append(Product(
+                id=f"prod-{i:04d}",
+                name=f"Product {i}",
+                price=Decimal(random.randint(10, 500)),
+                category_id=random.choice(["cat-electronics", "cat-clothing", "cat-home"]),
+                stock=random.randint(0, 100)
+            ))
+        session.add_all(products)
+        session.commit()
+        return products
+    
+    @staticmethod
+    def user_with_history(session, order_count=10):
+        """Create user with realistic order history."""
+        user = UserFactory.create(session=session)
+        
+        for i in range(order_count):
+            order = OrderFactory.create(
+                session=session,
+                customer=user,
+                created_at=datetime.utcnow() - timedelta(days=i*7),
+                status=random.choice(["delivered", "cancelled", "returned"])
+            )
+        
+        session.commit()
+        return user
+```
+
+## Fixture Best Practices
+
+### Rule DATA-011: Fixture Documentation
+
+Document fixtures with clear docstrings:
+
+```python
+@pytest.fixture
+def premium_user_with_expired_subscription(db_session, user_factory) -> User:
+    """
+    Create a user whose premium subscription has expired.
+    
+    Useful for testing:
+    - Subscription renewal flows
+    - Feature access after expiration
+    - Grace period behavior
+    
+    State:
+    - subscription_tier: "premium"
+    - subscription_expires: 7 days ago
+    - is_active: True (account still active)
+    
+    Returns:
+        User with expired premium subscription
+    """
+    return user_factory.create(
+        subscription_tier="premium",
+        subscription_expires=datetime.utcnow() - timedelta(days=7)
+    )
+```
+
+### Rule DATA-012: Avoiding Fixture Overuse
+
+Don't over-abstract with fixtures:
+
+```python
+# BAD: Too many micro-fixtures
+@pytest.fixture
+def user_email():
+    return "test@example.com"
+
+@pytest.fixture
+def user_name():
+    return "Test User"
+
+@pytest.fixture
+def user(user_email, user_name):
+    return User(email=user_email, name=user_name)
+
+
+# GOOD: Sensible abstraction level
+@pytest.fixture
+def user_factory():
+    return UserFactory
+
+def test_something(user_factory):
+    user = user_factory.create(email="specific@example.com")  # Override when needed
+```
